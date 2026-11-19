@@ -167,3 +167,5 @@ th { font-size: 0.82rem; color: var(--muted); }
 .badge.a_jour, .badge.autre { background: var(--ok); }
 .badge.faible { background: var(--faible); }
 .progress { margin-top: 0.8rem; }
+.exports { display: flex; gap: 0.6rem; }
+.exports .button { margin-top: 0; }

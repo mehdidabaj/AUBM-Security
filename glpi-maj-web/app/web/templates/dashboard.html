@@ -13,6 +13,10 @@
   <p>{{ data.a_mettre_a_jour }} poste(s) ont encore une action critique ou importante.</p>
   {% endif %}
   {% endif %}
+  <p class="exports">
+    <a class="button" href="/exports/excel">Télécharger Excel</a>
+    <a class="button" href="/exports/pdf">Télécharger le PDF</a>
+  </p>
   {% if role_rank[user.role] >= role_rank["technicien"] %}
   <form method="post" action="/verification" hx-post="/verification" hx-swap="none">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

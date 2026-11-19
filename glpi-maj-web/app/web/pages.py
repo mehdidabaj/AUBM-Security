@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -289,6 +289,32 @@ def _progress(db: Session) -> dict:
         "texte": f"{run.message} ({run.progress_current}/{run.progress_total})",
         "en_cours": running,
     }
+
+
+@router.get("/exports/excel")
+def export_excel(request: Request, db: Session = Depends(get_db)) -> Response:
+    require_user(request, db)
+    from app.exports.excel import build_workbook
+
+    payload = build_workbook(db, request.app.state.settings)
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="plan-maj.xlsx"'},
+    )
+
+
+@router.get("/exports/pdf")
+def export_pdf(request: Request, db: Session = Depends(get_db)) -> Response:
+    require_user(request, db)
+    from app.exports.pdf import build_pdf
+
+    payload = build_pdf(db, request.app.state.settings)
+    return Response(
+        content=payload,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="plan-maj.pdf"'},
+    )
 
 
 def _retour(message: str) -> RedirectResponse:
