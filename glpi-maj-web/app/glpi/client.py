@@ -75,35 +75,47 @@ class GlpiClient:
         finally:
             self.session_token = None
 
-    def list_computers(self) -> list[dict]:
-        return self._paginate("Computer", {"expand_dropdowns": "true"})
+    def list_computers(self, on_page=None) -> list[dict]:
+        return self._paginate("Computer", {"expand_dropdowns": "true"}, on_page=on_page)
 
-    def list_operating_systems(self) -> list[dict]:
-        return self._paginate("Item_OperatingSystem", {"expand_dropdowns": "true"})
+    def list_operating_systems(self, on_page=None) -> list[dict]:
+        return self._paginate("Item_OperatingSystem", {"expand_dropdowns": "true"}, on_page=on_page)
 
-    def list_softwares(self) -> list[dict]:
-        return self._paginate("Software", {"expand_dropdowns": "true"})
+    def list_softwares(self, on_page=None) -> list[dict]:
+        return self._paginate("Software", {"expand_dropdowns": "true"}, on_page=on_page)
 
-    def list_software_versions(self) -> list[dict]:
-        return self._paginate("SoftwareVersion", {"expand_dropdowns": "false"})
+    def list_software_versions(self, on_page=None) -> list[dict]:
+        return self._paginate("SoftwareVersion", {"expand_dropdowns": "false"}, on_page=on_page)
 
-    def list_software_links(self) -> list[dict]:
-        return self._paginate("Item_SoftwareVersion", {"expand_dropdowns": "false"})
+    def list_software_links(self, on_page=None) -> list[dict]:
+        return self._paginate("Item_SoftwareVersion", {"expand_dropdowns": "false"}, on_page=on_page)
 
-    def list_agents(self) -> list[dict]:
-        return self._paginate("Agent")
+    def list_agents(self, on_page=None) -> list[dict]:
+        return self._paginate("Agent", on_page=on_page)
 
-    def collect(self) -> list[ComputerItem]:
-        return assemble(
-            self.list_computers(),
-            self.list_operating_systems(),
-            self.list_softwares(),
-            self.list_software_versions(),
-            self.list_software_links(),
-            self.list_agents(),
+    def collect(self, on_progress=None) -> list[ComputerItem]:
+        steps = (
+            ("ordinateurs", self.list_computers),
+            ("systèmes", self.list_operating_systems),
+            ("logiciels", self.list_softwares),
+            ("versions", self.list_software_versions),
+            ("installations", self.list_software_links),
+            ("agents", self.list_agents),
         )
+        loaded = []
+        total_steps = len(steps)
+        for index, (label, method) in enumerate(steps):
+            if on_progress:
+                on_progress(index, total_steps, label, 0, None)
 
-    def _paginate(self, resource: str, params: dict | None = None) -> list[dict]:
+            def on_page(read, total, index=index, label=label):
+                if on_progress:
+                    on_progress(index, total_steps, label, read, total)
+
+            loaded.append(method(on_page=on_page))
+        return assemble(*loaded)
+
+    def _paginate(self, resource: str, params: dict | None = None, on_page=None) -> list[dict]:
         rows: list[dict] = []
         start = 0
         while True:
@@ -113,12 +125,16 @@ class GlpiClient:
             response = self._request("GET", resource, params=query)
             self._raise_for_glpi(response)
             chunk = response.json()
+            total = _content_range_total(response.headers.get("Content-Range"))
             if isinstance(chunk, dict):
                 chunk = chunk.get("data") or []
             if not isinstance(chunk, list) or not chunk:
+                if on_page is not None and start == 0:
+                    on_page(0, 0 if total is None else total)
                 break
             rows.extend(chunk)
-            total = _content_range_total(response.headers.get("Content-Range"))
+            if on_page is not None:
+                on_page(len(rows), total)
             start += self.page_size
             if total is not None and start >= total:
                 break

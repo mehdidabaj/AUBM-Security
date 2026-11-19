@@ -19,6 +19,9 @@ class CheckRun(Base):
     computer_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    progress_current: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     computers: Mapped[list["ComputerRecord"]] = relationship(
         back_populates="check_run",

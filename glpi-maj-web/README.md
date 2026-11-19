@@ -2,7 +2,7 @@
 
 Application interne qui lit les ordinateurs, les logiciels et les agents dans GLPI, les compare à des sources publiques (winget, GitHub Releases, endoflife.date, MSRC, NVD, CISA KEV et les avis des éditeurs) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
 
-L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF.
+L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF. Le bouton « Lancer une vérification » lit le parc en arrière-plan et affiche le pourcentage de collecte. À 100 %, le tableau de bord se recharge.
 
 ## Prérequis
 
@@ -141,6 +141,7 @@ Laissez les deux champs vides pour conserver l'accès anonyme. Redémarrez le se
 - **ERROR_NOT_ALLOWED_IP** : le client API `glpi-maj-web` n'autorise pas l'adresse qui l'appelle. N'autorisez que `127.0.0.1` et `::1`, et n'interrogez pas GLPI depuis un autre poste.
 - **ERROR_APP_TOKEN_PARAMETERS_MISSING** : `GLPI_APP_TOKEN` est vide ou ne correspond pas au client API. Régénérez le jeton et recopiez-le.
 - **ERROR_GLPI_LOGIN_USER_TOKEN** : `GLPI_USER_TOKEN` est refusé, ou la connexion par jeton externe n'est pas activée. Vérifiez aussi que le compte `api-maj` n'est pas désactivé.
+- **ERROR_RIGHT_MISSING** : le profil ouvert par la session API ne peut pas lire les ordinateurs ou les agents. Sur `api-maj`, le profil par défaut doit être Super-Admin, récursif, sur l'entité racine.
 - **Port occupé** : `ss -tlnp` montre qui écoute sur 8001 ou 8090. L'installation s'arrête avec le numéro du port. Ne libérez pas 8080 pour cette application.
 - **Source injoignable** : la page Sources et la fin de `install.sh` nomment la source. Vérifiez le pare-feu sortant et, s'il y a un proxy, `HTTPS_PROXY`. La dernière réponse connue reste utilisée.
 - **Droits** : le rôle `lecture` consulte, `technicien` lance une vérification et met à jour le suivi, `admin` modifie les paramètres et les comptes. Un compte technique GLPI doit rester en Observer récursif : un profil sans lecture des logiciels produit des postes « sans logiciel ».

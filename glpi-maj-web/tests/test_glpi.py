@@ -99,12 +99,34 @@ def test_collecte_paginee_et_session(app):
     assert computers[2].agent is None
 
 
+def test_pourcentage_de_collecte():
+    from app.glpi.service import collection_percent
+
+    assert collection_percent(0, 6, 0, None) == 0
+    assert collection_percent(0, 6, 50, 100) == int(0.5 * (95 / 6))
+    assert collection_percent(5, 6, 10, 10) == 95
+    assert collection_percent(0, 6, 0, 0) == int(95 / 6)
+
+
+def test_collecte_rapporte_la_progression(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    seen: list[tuple] = []
+    http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, {})))
+    with GlpiClient(app.state.settings, http=http, page_size=2) as client:
+        client.collect(on_progress=lambda *args: seen.append(args))
+    assert any(label == "ordinateurs" and read == 3 and total == 3 for _, _, label, read, total in seen)
+    assert any(label == "agents" for _, _, label, _, _ in seen)
+
+
 @pytest.mark.parametrize(
     ("body", "code", "fragment"),
     [
         (["ERROR_NOT_ALLOWED_IP", "refus"], "ERROR_NOT_ALLOWED_IP", "127.0.0.1"),
         (["ERROR_APP_TOKEN_PARAMETERS_MISSING", "manquant"], "ERROR_APP_TOKEN_PARAMETERS_MISSING", "GLPI_APP_TOKEN"),
         (["ERROR_GLPI_LOGIN_USER_TOKEN", "refus"], "ERROR_GLPI_LOGIN_USER_TOKEN", "GLPI_USER_TOKEN"),
+        (["ERROR_RIGHT_MISSING", "droits"], "ERROR_RIGHT_MISSING", "Super-Admin"),
     ],
 )
 def test_messages_derreur_glpi(app, body, code, fragment):
@@ -186,6 +208,8 @@ def test_verification_glpi_simulee_historisee(app):
         run = run_verification(db, app.state.settings, http=http)
         assert run.origin == "glpi"
         assert run.computer_count == 3
+        assert run.progress_current == 100
+        assert "3 postes" in run.message
         assert json.loads(run.summary_json)["postes_ajoutes"] == [1, 2, 3]
         counts = connection_report(
             app.state.settings,

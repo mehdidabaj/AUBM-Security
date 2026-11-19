@@ -146,6 +146,11 @@ async def create_account(request: Request, db: Session = Depends(get_db)) -> HTM
 async def launch_verification(request: Request, db: Session = Depends(get_db)):
     await enforce_csrf(request, db)
     require_user(request, db, "technicien")
+    if request.headers.get("hx-request"):
+        from app.glpi.service import start_verification, verification_view
+
+        start_verification(request.app, db)
+        return render(request, "verification_progress.html", progression=verification_view(db, suivre=True))
     from app.glpi.errors import GlpiError
     from app.glpi.service import run_verification
 
@@ -153,13 +158,18 @@ async def launch_verification(request: Request, db: Session = Depends(get_db)):
         run = run_verification(db, request.app.state.settings)
     except GlpiError as exc:
         raise HTTPException(status_code=502, detail=exc.message) from exc
-    response = JSONResponse(
+    return JSONResponse(
         {
             "id": run.id,
             "ordinateurs": run.computer_count,
             "resume": json.loads(run.summary_json or "{}"),
         }
     )
-    if request.headers.get("hx-request"):
-        response.headers["HX-Redirect"] = "/"
-    return response
+
+
+@router.get("/verification/progression", response_class=HTMLResponse)
+def verification_progression(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    require_user(request, db)
+    from app.glpi.service import verification_view
+
+    return render(request, "verification_progress.html", progression=verification_view(db, suivre=True))

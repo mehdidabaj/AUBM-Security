@@ -132,6 +132,77 @@ def test_parametres_glpi_seuils_et_sources(client, admin, monkeypatch):
     assert "winget répond" in tested.text
 
 
+def test_progression_de_la_verification(client, app, admin):
+    import time
+
+    from sqlalchemy import func, select
+
+    from app.models.inventory import CheckRun
+    from app.timeutils import utcnow
+    from tests.conftest import csrf_from, login
+
+    login(client, "admin", "motdepasse-admin")
+    db = app.state.SessionLocal()
+    try:
+        db.add(
+            CheckRun(
+                started_at=utcnow(),
+                status="running",
+                origin="glpi",
+                computer_count=0,
+                summary_json="{}",
+                progress_current=40,
+                progress_total=100,
+                message="Lecture des ordinateurs : 20 / 50",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    page = client.get("/")
+    assert "40 %" in page.text
+    assert "Lecture des ordinateurs : 20 / 50" in page.text
+    assert 'role="progressbar"' in page.text
+    fragment = client.get("/verification/progression")
+    assert "40 %" in fragment.text
+    assert "hx-get=\"/verification/progression\"" in fragment.text
+
+    db = app.state.SessionLocal()
+    try:
+        current = db.scalar(select(CheckRun).order_by(CheckRun.id.desc()))
+        current.status = "success"
+        current.finished_at = utcnow().replace(year=utcnow().year - 1)
+        db.commit()
+    finally:
+        db.close()
+
+    launched = client.post(
+        "/verification",
+        headers={"X-CSRF-Token": csrf_from(page.text), "HX-Request": "true"},
+    )
+    assert launched.status_code == 200
+    assert "Taux de collecte" in launched.text
+    assert "<html" not in launched.text.lower()
+
+    deadline = time.monotonic() + 5
+    status = "running"
+    while time.monotonic() < deadline:
+        db = app.state.SessionLocal()
+        try:
+            status = db.scalar(select(CheckRun.status).order_by(CheckRun.id.desc()))
+            running = db.scalar(
+                select(func.count()).select_from(CheckRun).where(CheckRun.status == "running")
+            )
+        finally:
+            db.close()
+        if status != "running":
+            break
+        time.sleep(0.05)
+    assert status == "success"
+    assert running == 0
+
+
 def test_association_manuelle(client, app):
     from app.auth.service import create_user
 

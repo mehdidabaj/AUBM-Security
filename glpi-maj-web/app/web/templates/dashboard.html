@@ -17,12 +17,7 @@
     <a class="button" href="/exports/excel">Télécharger Excel</a>
     <a class="button" href="/exports/pdf">Télécharger le PDF</a>
   </p>
-  {% if role_rank[user.role] >= role_rank["technicien"] %}
-  <form method="post" action="/verification" hx-post="/verification" hx-swap="none">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">Lancer une vérification</button>
-  </form>
-  {% endif %}
+  {% include "verification_progress.html" %}
 </section>
 
 {% if data.run %}

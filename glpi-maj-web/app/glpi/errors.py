@@ -14,6 +14,11 @@ MESSAGES = {
         "Jeton utilisateur refusé (ERROR_GLPI_LOGIN_USER_TOKEN). "
         "Vérifiez GLPI_USER_TOKEN et activez la connexion par jeton externe dans GLPI."
     ),
+    "ERROR_RIGHT_MISSING": (
+        "Droit manquant (ERROR_RIGHT_MISSING). "
+        "Le profil de la session API doit pouvoir lire les ordinateurs et les agents. "
+        "Sur le compte api-maj, choisissez Super-Admin comme profil par défaut."
+    ),
 }
 
 

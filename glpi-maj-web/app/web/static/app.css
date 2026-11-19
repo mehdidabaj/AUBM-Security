@@ -167,5 +167,9 @@ th { font-size: 0.82rem; color: var(--muted); }
 .badge.a_jour, .badge.autre { background: var(--ok); }
 .badge.faible { background: var(--faible); }
 .progress { margin-top: 0.8rem; }
+.progress-percent { margin: 0.2rem 0; font-size: 1.8rem; font-weight: 700; }
+.progress-track { height: 0.75rem; background: #e6eef2; border-radius: 999px; overflow: hidden; }
+.progress-track span { display: block; height: 100%; background: var(--accent); }
+button:disabled { opacity: 0.55; cursor: default; }
 .exports { display: flex; gap: 0.6rem; }
 .exports .button { margin-top: 0; }

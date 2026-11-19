@@ -45,8 +45,16 @@ def _chart(data: dict) -> dict:
 @router.get("/", response_class=HTMLResponse)
 def board(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
+    from app.glpi.service import verification_view
+
     data = dashboard(db, request.app.state.settings)
-    return render(request, "dashboard.html", data=data, chart=_chart(data))
+    return render(
+        request,
+        "dashboard.html",
+        data=data,
+        chart=_chart(data),
+        progression=verification_view(db),
+    )
 
 
 @router.get("/postes", response_class=HTMLResponse)
