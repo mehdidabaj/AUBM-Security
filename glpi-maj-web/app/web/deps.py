@@ -35,10 +35,15 @@ async def enforce_csrf(request: Request, db: Session) -> None:
         if "application/json" not in content_type:
             form = await request.form()
             presented = str(form.get("csrf_token") or "")
-    if not tokens_equal(presented, cookie):
-        raise HTTPException(status_code=403, detail="Jeton CSRF invalide.")
     row = get_valid_session(db, request.cookies.get(SESSION_COOKIE))
-    if row is not None and not tokens_equal(presented, row.csrf_token):
+    if row is not None:
+        # Le formulaire porte le jeton de la session. Le cookie peut être resté
+        # sur l'ancienne valeur quand le navigateur n'a pas repris les deux
+        # Set-Cookie de la redirection de connexion.
+        if not tokens_equal(presented, row.csrf_token):
+            raise HTTPException(status_code=403, detail="Jeton CSRF invalide.")
+        return
+    if not tokens_equal(presented, cookie):
         raise HTTPException(status_code=403, detail="Jeton CSRF invalide.")
 
 

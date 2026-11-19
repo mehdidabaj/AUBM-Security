@@ -142,6 +142,29 @@ def test_admin_cree_un_compte(client, admin):
     assert login(client, "nina", "motdepasse-nina").status_code == 303
 
 
+def test_jeton_de_session_accepte_si_le_cookie_csrf_a_derape(client, admin):
+    login(client, "admin", "motdepasse-admin")
+    page = client.get("/")
+    token = csrf_from(page.text)
+    client.cookies.set("glpimaj_csrf", "ancien-jeton-perime")
+    response = client.post("/deconnexion", data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+
+
+def test_connexion_sans_cookie_renvoie_le_formulaire(client, admin):
+    page = client.get("/connexion")
+    assert page.headers["cache-control"] == "no-store"
+    token = csrf_from(page.text)
+    client.cookies.clear()
+    response = client.post(
+        "/connexion",
+        data={"username": "admin", "password": "motdepasse-admin", "csrf_token": token},
+    )
+    assert response.status_code == 403
+    assert "Jeton CSRF invalide" in response.text
+    assert 'name="csrf_token"' in response.text
+
+
 def test_cookie_session_httponly_samesite(client, admin):
     response = login(client, "admin", "motdepasse-admin")
     set_cookie = response.headers.get("set-cookie", "")

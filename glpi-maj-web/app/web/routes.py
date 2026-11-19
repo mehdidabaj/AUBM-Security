@@ -28,6 +28,12 @@ def _cookie_kwargs(request: Request, max_age: int) -> dict:
     }
 
 
+def _no_store(response: HTMLResponse) -> HTMLResponse:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
     db = request.app.state.SessionLocal()
     try:
@@ -43,7 +49,22 @@ def render(request: Request, name: str, status_code: int = 200, **context) -> HT
         db.close()
     payload = {"request": request, "user": user, "csrf_token": csrf, "role_rank": ROLE_RANK}
     payload.update(context)
-    return _templates(request).TemplateResponse(request, name, payload, status_code=status_code)
+    response = _templates(request).TemplateResponse(request, name, payload, status_code=status_code)
+    if csrf:
+        response.set_cookie(CSRF_COOKIE, csrf, **_cookie_kwargs(request, 3600))
+    return _no_store(response)
+
+
+def login_page(request: Request, error: str | None = None, status_code: int = 200) -> HTMLResponse:
+    token = new_token()
+    response = _templates(request).TemplateResponse(
+        request,
+        "login.html",
+        {"request": request, "user": None, "csrf_token": token, "error": error},
+        status_code=status_code,
+    )
+    response.set_cookie(CSRF_COOKIE, token, **_cookie_kwargs(request, 3600))
+    return _no_store(response)
 
 
 @router.get("/sante")
@@ -59,14 +80,7 @@ def login_form(request: Request) -> HTMLResponse:
             return RedirectResponse("/", status_code=303)
     finally:
         db.close()
-    token = new_token()
-    response = _templates(request).TemplateResponse(
-        request,
-        "login.html",
-        {"request": request, "user": None, "csrf_token": token, "error": None},
-    )
-    response.set_cookie(CSRF_COOKIE, token, **_cookie_kwargs(request, 3600))
-    return response
+    return login_page(request)
 
 
 @router.post("/connexion")
@@ -78,15 +92,7 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> Redir
     try:
         user = authenticate(db, username, password)
     except AuthError as exc:
-        token = new_token()
-        response = _templates(request).TemplateResponse(
-            request,
-            "login.html",
-            {"request": request, "user": None, "csrf_token": token, "error": exc.message},
-            status_code=401,
-        )
-        response.set_cookie(CSRF_COOKIE, token, **_cookie_kwargs(request, 3600))
-        return response
+        return login_page(request, exc.message, status_code=401)
     hours = request.app.state.settings.session_hours
     row = open_session(db, user, hours)
     response = RedirectResponse("/", status_code=303)
@@ -101,8 +107,21 @@ async def logout(request: Request, db: Session = Depends(get_db)) -> RedirectRes
     await enforce_csrf(request, db)
     destroy_session(db, request.cookies.get(SESSION_COOKIE))
     response = RedirectResponse("/connexion", status_code=303)
-    response.delete_cookie(SESSION_COOKIE, path="/")
-    response.delete_cookie(CSRF_COOKIE, path="/")
+    cookie_flags = _cookie_kwargs(request, 0)
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        secure=cookie_flags["secure"],
+        httponly=True,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        CSRF_COOKIE,
+        path="/",
+        secure=cookie_flags["secure"],
+        httponly=True,
+        samesite="strict",
+    )
     return response
 
 

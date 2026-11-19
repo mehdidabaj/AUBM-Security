@@ -83,6 +83,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         accepts = request.headers.get("accept", "")
         if exc.status_code == 401 and request.method == "GET" and "application/json" not in accepts:
             return RedirectResponse("/connexion", status_code=303)
+        if exc.status_code == 403 and request.method == "POST" and request.url.path == "/connexion":
+            from app.web.routes import login_page
+
+            return login_page(request, detail, status_code=403)
         return HTMLResponse(f"<p>{detail}</p>", status_code=exc.status_code)
 
     return app
