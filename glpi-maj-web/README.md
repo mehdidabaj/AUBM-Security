@@ -61,11 +61,18 @@ curl -sS 'http://127.0.0.1/apirest.php/killSession' \
 
 ## Installation
 
-Le dépôt se clone une fois, par exemple dans `/opt/src/AUBM-Security`. L'installation recopie le dossier `glpi-maj-web` vers `/opt/glpi-maj-web` et mémorise l'emplacement du clone.
+Le script n'est pas sur le serveur tant que le dépôt n'y a pas été cloné. Depuis n'importe quel dossier, y compris `/root` :
 
 ```bash
-sudo bash glpi-maj-web/deploy/install.sh
+sudo mkdir -p /opt/src
+sudo git clone --branch feature/glpi-maj-web \
+  https://github.com/mehdidabaj/AUBM-Security.git /opt/src/AUBM-Security
+sudo bash /opt/src/AUBM-Security/glpi-maj-web/deploy/install.sh
 ```
+
+Après la fusion de cette branche dans `main`, remplacez `--branch feature/glpi-maj-web` par `--branch main`.
+
+L'installation recopie le dossier `glpi-maj-web` vers `/opt/glpi-maj-web` et mémorise l'emplacement du clone. Elle ne se lance pas avec un chemin relatif depuis le dossier personnel.
 
 Le script est idempotent. S'il trouve le service déjà démarré, il l'arrête, puis refuse de continuer si le port 8001 ou 8090 est encore pris. Il refuse aussi le port 8080. Il crée l'utilisateur système `glpimaj`, le virtualenv, `/etc/glpi-maj-web/config.env` (mode `0600`) et la base dans `/var/lib/glpi-maj-web/`. Il applique les migrations, crée le premier administrateur, active systemd et Apache, puis affiche les sources qui ne répondent pas.
 
