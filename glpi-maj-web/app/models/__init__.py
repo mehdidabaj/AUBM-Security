@@ -2,6 +2,7 @@
 
 from app.models.auth import AppSetting, SessionToken, User
 from app.models.inventory import AgentRecord, CheckRun, ComputerRecord, SoftwareInstall
+from app.models.sources import SourceCache, SourceRun
 
 __all__ = [
     "AgentRecord",
@@ -10,5 +11,7 @@ __all__ = [
     "ComputerRecord",
     "SessionToken",
     "SoftwareInstall",
+    "SourceCache",
+    "SourceRun",
     "User",
 ]

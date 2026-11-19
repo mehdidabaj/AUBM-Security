@@ -1,0 +1,24 @@
+{
+  "versions": [
+    {"slug": "chrome", "version": "157.0.8103.50", "mode": "ge"},
+    {"slug": "edge", "version": "156.0.4314.58", "mode": "ge"},
+    {"slug": "firefox", "version": "160.0.1", "mode": "ge"},
+    {"slug": "acrobat", "version": "26.002.21900", "mode": "gt"},
+    {"slug": "reader", "version": "26.002.21900", "mode": "gt"},
+    {"slug": "notepadpp", "version": "8.9.7", "mode": "ge"},
+    {"slug": "teamviewer", "version": "15.83", "mode": "ge"},
+    {"slug": "java8", "version": "8u511", "mode": "gt"},
+    {"slug": "m365", "version": "16.0.20527.20196", "mode": "ge"},
+    {"slug": "windows-26h2", "version": "26300.9974", "mode": "ge"},
+    {"slug": "windows-25h2", "version": "26200.9974", "mode": "ge"},
+    {"slug": "winrar", "version": "7.23", "mode": "ge"},
+    {"slug": "vlc", "version": "3.0.24", "mode": "ge"},
+    {"slug": "brave", "version": "1.99.56", "mode": "ge"},
+    {"slug": "eset-endpoint", "version": "13.0.2058", "mode": "ge"},
+    {"slug": "eset-agent", "version": "12.5.2105", "mode": "ge"},
+    {"slug": "photoshop", "version": "26.11.6", "mode": "gt"},
+    {"slug": "powershell", "version": "7.6.10", "mode": "ge"},
+    {"slug": "glpi-agent", "version": "1.21", "mode": "ge"}
+  ],
+  "eol": ["windows-10", "office-2013", "office-2016", "office-2019", "office-2021"]
+}

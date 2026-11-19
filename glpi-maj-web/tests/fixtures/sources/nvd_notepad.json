@@ -1,0 +1,11 @@
+{
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2026-2000",
+        "descriptions": [{"lang": "en", "value": "A bug in Notepad++."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 7.5}}]}
+      }
+    }
+  ]
+}

@@ -27,16 +27,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if settings.demo_active:
-            db = app.state.SessionLocal()
-            try:
+        db = app.state.SessionLocal()
+        try:
+            from app.sources.service import load_fallback_if_needed
+
+            load_fallback_if_needed(db)
+            if settings.demo_active:
                 from app.demo.loader import seed_demo_if_needed
 
                 seed_demo_if_needed(db)
-            except OperationalError:
-                logger.warning("Base non initialisée : démarrage sans parc de démonstration.")
-            finally:
-                db.close()
+        except OperationalError:
+            logger.warning("Base non initialisée : démarrage sans données de référence.")
+        finally:
+            db.close()
         scheduler = None
         if settings.scheduler_enabled:
             from app.scheduler import start_scheduler

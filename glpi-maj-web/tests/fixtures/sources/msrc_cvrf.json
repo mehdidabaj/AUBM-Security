@@ -1,0 +1,35 @@
+{
+  "DocumentTitle": "November 2026 Security Updates",
+  "DocumentTracking": {"Identification": {"ID": "2026-Nov"}},
+  "ProductTree": {
+    "FullProductName": [
+      {"ProductID": "12001", "Value": "Windows 11 Version 26H2 for x64-based Systems"},
+      {"ProductID": "12000", "Value": "Windows 11 Version 25H2 for x64-based Systems"},
+      {"ProductID": "11762", "Value": "Microsoft 365 Apps for Enterprise"}
+    ]
+  },
+  "Vulnerability": [
+    {
+      "CVE": "CVE-2026-5001",
+      "CVSSScoreSets": [{"BaseScore": 8.8}],
+      "Notes": [{"Value": "Fixed build 10.0.26300.9974"}],
+      "Remediations": [
+        {
+          "ProductID": ["12001"],
+          "Description": {"Value": "10.0.26300.9974"},
+          "URL": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-5001"
+        },
+        {
+          "ProductID": ["12000"],
+          "Description": {"Value": "26200.9974"},
+          "URL": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-5001"
+        },
+        {
+          "ProductID": ["11762"],
+          "Description": {"Value": "Version 16.0.20527.20196"},
+          "URL": "https://msrc.microsoft.com/update-guide/releaseNote/2026-Nov"
+        }
+      ]
+    }
+  ]
+}
