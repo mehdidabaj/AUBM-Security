@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import OperationalError
 
 from app.config import Settings, load_settings
 from app.database import ensure_database_parent, make_engine, make_session_factory
 from app.web.routes import router
+
+logger = logging.getLogger(__name__)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = PACKAGE_DIR / "web" / "templates"
@@ -19,7 +24,29 @@ STATIC_DIR = PACKAGE_DIR / "web" / "static"
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     ensure_database_parent(settings)
-    app = FastAPI(title="Suivi des mises à jour GLPI")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if settings.demo_active:
+            db = app.state.SessionLocal()
+            try:
+                from app.demo.loader import seed_demo_if_needed
+
+                seed_demo_if_needed(db)
+            except OperationalError:
+                logger.warning("Base non initialisée : démarrage sans parc de démonstration.")
+            finally:
+                db.close()
+        scheduler = None
+        if settings.scheduler_enabled:
+            from app.scheduler import start_scheduler
+
+            scheduler = start_scheduler(app)
+        yield
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+
+    app = FastAPI(title="Suivi des mises à jour GLPI", lifespan=lifespan)
     app.state.settings = settings
     engine = make_engine(settings.database_url)
     app.state.engine = engine

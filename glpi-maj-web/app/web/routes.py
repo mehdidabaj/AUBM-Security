@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -127,3 +129,21 @@ async def create_account(request: Request, db: Session = Depends(get_db)) -> HTM
     except AuthError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
     return HTMLResponse("Compte créé.", status_code=201)
+
+
+@router.post("/verification")
+async def launch_verification(request: Request, db: Session = Depends(get_db)):
+    await enforce_csrf(request, db)
+    require_user(request, db, "technicien")
+    from app.glpi.errors import GlpiError
+    from app.glpi.service import run_verification
+
+    try:
+        run = run_verification(db, request.app.state.settings)
+    except GlpiError as exc:
+        raise HTTPException(status_code=502, detail=exc.message) from exc
+    return {
+        "id": run.id,
+        "ordinateurs": run.computer_count,
+        "resume": json.loads(run.summary_json or "{}"),
+    }
