@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Bonjour {{ user.username }}</h1>
+  <p>La session est ouverte avec le rôle <strong>{{ user.role }}</strong>.</p>
+  <p class="muted">La collecte du parc, les sources et le calcul des actions arrivent dans les étapes suivantes. Cette page confirme que l'authentification est en place.</p>
+</section>
+{% endblock %}

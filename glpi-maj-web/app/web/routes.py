@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import Session
+
+from app.auth.security import CSRF_COOKIE, ROLE_RANK, SESSION_COOKIE, new_token
+from app.auth.service import AuthError, authenticate, create_user, destroy_session, open_session
+from app.web.deps import current_user, enforce_csrf, get_db, require_user
+
+router = APIRouter()
+
+
+def _templates(request: Request):
+    return request.app.state.templates
+
+
+def _cookie_kwargs(request: Request, max_age: int) -> dict:
+    settings = request.app.state.settings
+    return {
+        "max_age": max_age,
+        "httponly": True,
+        "samesite": "strict",
+        "secure": settings.session_cookie_secure,
+        "path": "/",
+    }
+
+
+def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
+    db = request.app.state.SessionLocal()
+    try:
+        user = current_user(request, db)
+        csrf = request.cookies.get(CSRF_COOKIE, "")
+        if user is not None:
+            from app.auth.service import get_valid_session
+
+            row = get_valid_session(db, request.cookies.get(SESSION_COOKIE))
+            if row is not None:
+                csrf = row.csrf_token
+    finally:
+        db.close()
+    payload = {"request": request, "user": user, "csrf_token": csrf, "role_rank": ROLE_RANK}
+    payload.update(context)
+    return _templates(request).TemplateResponse(request, name, payload, status_code=status_code)
+
+
+@router.get("/sante")
+def sante() -> dict[str, str]:
+    return {"statut": "ok"}
+
+
+@router.get("/connexion", response_class=HTMLResponse)
+def login_form(request: Request) -> HTMLResponse:
+    db = request.app.state.SessionLocal()
+    try:
+        if current_user(request, db) is not None:
+            return RedirectResponse("/", status_code=303)
+    finally:
+        db.close()
+    token = new_token()
+    response = _templates(request).TemplateResponse(
+        request,
+        "login.html",
+        {"request": request, "user": None, "csrf_token": token, "error": None},
+    )
+    response.set_cookie(CSRF_COOKIE, token, **_cookie_kwargs(request, 3600))
+    return response
+
+
+@router.post("/connexion")
+async def login_submit(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    await enforce_csrf(request, db)
+    form = await request.form()
+    username = str(form.get("username") or "")
+    password = str(form.get("password") or "")
+    try:
+        user = authenticate(db, username, password)
+    except AuthError as exc:
+        token = new_token()
+        response = _templates(request).TemplateResponse(
+            request,
+            "login.html",
+            {"request": request, "user": None, "csrf_token": token, "error": exc.message},
+            status_code=401,
+        )
+        response.set_cookie(CSRF_COOKIE, token, **_cookie_kwargs(request, 3600))
+        return response
+    hours = request.app.state.settings.session_hours
+    row = open_session(db, user, hours)
+    response = RedirectResponse("/", status_code=303)
+    lifetime = hours * 3600
+    response.set_cookie(SESSION_COOKIE, row.id, **_cookie_kwargs(request, lifetime))
+    response.set_cookie(CSRF_COOKIE, row.csrf_token, **_cookie_kwargs(request, lifetime))
+    return response
+
+
+@router.post("/deconnexion")
+async def logout(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    await enforce_csrf(request, db)
+    destroy_session(db, request.cookies.get(SESSION_COOKIE))
+    response = RedirectResponse("/connexion", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, path="/")
+    return response
+
+
+@router.get("/", response_class=HTMLResponse)
+def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    user = current_user(request, db)
+    if user is None:
+        return RedirectResponse("/connexion", status_code=303)
+    return render(request, "home.html")
+
+
+@router.post("/comptes", response_class=HTMLResponse)
+async def create_account(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    await enforce_csrf(request, db)
+    require_user(request, db, "admin")
+    form = await request.form()
+    try:
+        create_user(
+            db,
+            str(form.get("username") or ""),
+            str(form.get("password") or ""),
+            str(form.get("role") or "lecture"),
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    return HTMLResponse("Compte créé.", status_code=201)
