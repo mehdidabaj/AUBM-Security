@@ -18,7 +18,7 @@ from app.actions.rules import (
 )
 from app.actions.versions import highest_version, is_outdated, parse_version
 from app.models.actions import ActionFollowUp, ComputedAction
-from app.models.inventory import CheckRun
+from app.models.inventory import CheckRun, ComputerRecord
 from app.sources.cache import is_end_of_life, payload_of, version_target
 from app.sources.cache import get_cache
 from app.sources.catalog import PRODUCTS
@@ -53,6 +53,37 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, 
     _update_summary(db, run, previous, created)
     db.commit()
     return created
+
+
+def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int], now: datetime | None = None) -> None:
+    """Recalcule les actions des postes indiqués, sans clôturer la vérification."""
+    if not glpi_ids:
+        return
+    from sqlalchemy.orm import selectinload
+
+    moment = now or utcnow()
+    seed_mappings(db)
+    rules = fixed_rules(db)
+    critical = threshold(db, "severity_critical", 9)
+    important = threshold(db, "severity_important", 7)
+    window = stale_days(db)
+    db.execute(
+        delete(ComputedAction).where(
+            ComputedAction.check_run_id == run.id,
+            ComputedAction.glpi_computer_id.in_(glpi_ids),
+        )
+    )
+    records = db.scalars(
+        select(ComputerRecord)
+        .where(ComputerRecord.check_run_id == run.id, ComputerRecord.glpi_id.in_(glpi_ids))
+        .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
+    ).all()
+    created: list[ComputedAction] = []
+    for computer in records:
+        created.extend(_computer_actions(db, run, computer, rules, critical, important, window, moment))
+    if created:
+        db.add_all(created)
+    db.flush()
 
 
 def set_follow_up(

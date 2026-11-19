@@ -106,11 +106,11 @@ class GlpiClient:
         total_steps = len(steps)
         for index, (label, method) in enumerate(steps):
             if on_progress:
-                on_progress(index, total_steps, label, 0, None)
+                on_progress(index, total_steps, label, 0, None, [])
 
-            def on_page(read, total, index=index, label=label):
+            def on_page(read, total, chunk=None, index=index, label=label):
                 if on_progress:
-                    on_progress(index, total_steps, label, read, total)
+                    on_progress(index, total_steps, label, read, total, chunk or [])
 
             loaded.append(method(on_page=on_page))
         return assemble(*loaded)
@@ -130,11 +130,11 @@ class GlpiClient:
                 chunk = chunk.get("data") or []
             if not isinstance(chunk, list) or not chunk:
                 if on_page is not None and start == 0:
-                    on_page(0, 0 if total is None else total)
+                    on_page(0, 0 if total is None else total, [])
                 break
             rows.extend(chunk)
             if on_page is not None:
-                on_page(len(rows), total)
+                on_page(len(rows), total, chunk)
             start += self.page_size
             if total is not None and start >= total:
                 break

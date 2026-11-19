@@ -170,6 +170,8 @@ th { font-size: 0.82rem; color: var(--muted); }
 .progress-percent { margin: 0.2rem 0; font-size: 1.8rem; font-weight: 700; }
 .progress-track { height: 0.75rem; background: #e6eef2; border-radius: 999px; overflow: hidden; }
 .progress-track span { display: block; height: 100%; background: var(--accent); }
+.progress-results { max-height: 28rem; overflow: auto; margin-top: 0.6rem; }
+.badge.lecture { background: #64748b; }
 button:disabled { opacity: 0.55; cursor: default; }
 .exports { display: flex; gap: 0.6rem; }
 .exports .button { margin-top: 0; }

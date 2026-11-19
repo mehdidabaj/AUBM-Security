@@ -53,7 +53,7 @@ def board(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         "dashboard.html",
         data=data,
         chart=_chart(data),
-        progression=verification_view(db),
+        progression=verification_view(db, settings=request.app.state.settings),
     )
 
 

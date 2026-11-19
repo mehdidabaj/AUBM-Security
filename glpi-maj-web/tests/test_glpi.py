@@ -116,8 +116,50 @@ def test_collecte_rapporte_la_progression(app):
     http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, {})))
     with GlpiClient(app.state.settings, http=http, page_size=2) as client:
         client.collect(on_progress=lambda *args: seen.append(args))
-    assert any(label == "ordinateurs" and read == 3 and total == 3 for _, _, label, read, total in seen)
-    assert any(label == "agents" for _, _, label, _, _ in seen)
+    assert any(item[2] == "ordinateurs" and item[3] == 3 and item[4] == 3 for item in seen)
+    assert any(item[2] == "agents" for item in seen)
+
+
+def test_poste_visible_avant_la_fin_de_la_collecte(app):
+    from app.glpi.service import _LiveCatalog, _open_run, noter_page, verification_view
+
+    db = app.state.SessionLocal()
+    try:
+        run = _open_run(db, "glpi")
+        live = _LiveCatalog()
+        noter_page(
+            db,
+            run,
+            live,
+            "ordinateurs",
+            [{
+                "id": 7,
+                "name": "PC VISIBLE",
+                "groups_id": "Accueil",
+                "locations_id": "Hall",
+                "computertypes_id": "Portable",
+                "date_mod": "2026-11-19 10:00:00",
+            }],
+        )
+        noter_page(db, run, live, "logiciels", [{"id": 3, "name": "Google Chrome", "manufacturers_id": "Google"}])
+        noter_page(db, run, live, "versions", [{"id": 9, "name": "157.0", "softwares_id": 3}])
+        noter_page(
+            db,
+            run,
+            live,
+            "installations",
+            [{"itemtype": "Computer", "items_id": 7, "softwareversions_id": 9}],
+        )
+        db.commit()
+        view = verification_view(db)
+        assert view["en_cours"] is True
+        assert view["lus"] == 1
+        poste = view["postes"][0]
+        assert poste["nom"] == "PC VISIBLE"
+        assert poste["service"] == "Accueil"
+        assert "Google Chrome" in poste["logiciels"]
+    finally:
+        db.close()
 
 
 @pytest.mark.parametrize(
@@ -208,6 +250,7 @@ def test_verification_glpi_simulee_historisee(app):
         run = run_verification(db, app.state.settings, http=http)
         assert run.origin == "glpi"
         assert run.computer_count == 3
+        assert len(run.computers) == 3
         assert run.progress_current == 100
         assert "3 postes" in run.message
         assert json.loads(run.summary_json)["postes_ajoutes"] == [1, 2, 3]

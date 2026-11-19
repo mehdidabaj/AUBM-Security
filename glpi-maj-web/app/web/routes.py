@@ -150,7 +150,11 @@ async def launch_verification(request: Request, db: Session = Depends(get_db)):
         from app.glpi.service import start_verification, verification_view
 
         start_verification(request.app, db)
-        return render(request, "verification_progress.html", progression=verification_view(db, suivre=True))
+        return render(
+            request,
+            "verification_progress.html",
+            progression=verification_view(db, suivre=True, settings=request.app.state.settings),
+        )
     from app.glpi.errors import GlpiError
     from app.glpi.service import run_verification
 
@@ -172,4 +176,8 @@ def verification_progression(request: Request, db: Session = Depends(get_db)) ->
     require_user(request, db)
     from app.glpi.service import verification_view
 
-    return render(request, "verification_progress.html", progression=verification_view(db, suivre=True))
+    return render(
+        request,
+        "verification_progress.html",
+        progression=verification_view(db, suivre=True, settings=request.app.state.settings),
+    )

@@ -144,16 +144,31 @@ def test_progression_de_la_verification(client, app, admin):
     login(client, "admin", "motdepasse-admin")
     db = app.state.SessionLocal()
     try:
+        run = CheckRun(
+            started_at=utcnow(),
+            status="running",
+            origin="glpi",
+            computer_count=1,
+            summary_json="{}",
+            progress_current=40,
+            progress_total=100,
+            message="Lecture des ordinateurs : 20 / 50",
+        )
+        db.add(run)
+        db.flush()
+        from app.models.inventory import ComputerRecord
+
         db.add(
-            CheckRun(
-                started_at=utcnow(),
-                status="running",
-                origin="glpi",
-                computer_count=0,
-                summary_json="{}",
-                progress_current=40,
-                progress_total=100,
-                message="Lecture des ordinateurs : 20 / 50",
+            ComputerRecord(
+                check_run_id=run.id,
+                glpi_id=7,
+                name="PC VISIBLE",
+                group_name="Accueil",
+                location="Hall",
+                computer_type="Portable",
+                os_name="Windows 11",
+                os_version="26H2",
+                os_build="26300.1",
             )
         )
         db.commit()
@@ -162,6 +177,7 @@ def test_progression_de_la_verification(client, app, admin):
 
     page = client.get("/")
     assert "40 %" in page.text
+    assert "PC VISIBLE" in page.text
     assert "Lecture des ordinateurs : 20 / 50" in page.text
     assert 'role="progressbar"' in page.text
     fragment = client.get("/verification/progression")
