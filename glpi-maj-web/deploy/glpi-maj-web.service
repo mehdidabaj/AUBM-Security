@@ -1,0 +1,25 @@
+[Unit]
+Description=Suivi des mises à jour GLPI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=glpimaj
+Group=glpimaj
+WorkingDirectory=/opt/glpi-maj-web
+Environment=APP_PORT=8001
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TZ=Europe/Paris
+EnvironmentFile=/etc/glpi-maj-web/config.env
+ExecStart=/opt/glpi-maj-web/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${APP_PORT}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/glpi-maj-web
+SyslogIdentifier=glpi-maj-web
+
+[Install]
+WantedBy=multi-user.target

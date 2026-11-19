@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Stable Channel Update for Desktop</title>
+    <link href="https://chromereleases.googleblog.com/2026/11/stable.html"/>
+    <updated>2026-11-12T00:00:00Z</updated>
+    <content>The stable channel has been updated to 157.0.8103.50 for Windows.</content>
+  </entry>
+</feed>

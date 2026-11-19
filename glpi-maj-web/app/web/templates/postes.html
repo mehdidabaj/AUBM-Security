@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Postes{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Postes</h1>
+  <form class="filters" method="get" action="/postes" hx-get="/postes" hx-target="#liste" hx-push-url="true" hx-trigger="submit, change, keyup delay:400ms from:input[name=q]">
+    <label>Service
+      <select name="service">
+        <option value="">Tous</option>
+        {% for item in view.services %}
+        <option value="{{ item }}" {% if params.service == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Lieu
+      <select name="lieu">
+        <option value="">Tous</option>
+        {% for item in view.lieux %}
+        <option value="{{ item }}" {% if params.lieu == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Priorité
+      <select name="priorite">
+        <option value="">Toutes</option>
+        {% for value, label in [("critique", "Critique"), ("important", "Important"), ("faible", "Faible"), ("a_jour", "À jour")] %}
+        <option value="{{ value }}" {% if params.priorite == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>À jour
+      <select name="a_jour">
+        <option value="">Tous</option>
+        <option value="oui" {% if params.a_jour == "oui" %}selected{% endif %}>Oui</option>
+        <option value="non" {% if params.a_jour == "non" %}selected{% endif %}>Non</option>
+      </select>
+    </label>
+    <label>Logiciel
+      <select name="logiciel">
+        <option value="">Tous</option>
+        {% for item in view.logiciels %}
+        <option value="{{ item }}" {% if params.logiciel == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Recherche
+      <input type="search" name="q" value="{{ params.q }}" placeholder="Nom du poste">
+    </label>
+    <button type="submit">Filtrer</button>
+  </form>
+</section>
+<div id="liste">
+  {% include "postes_table.html" %}
+</div>
+{% endblock %}

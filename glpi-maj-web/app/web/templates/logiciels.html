@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Logiciels{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Logiciels suivis</h1>
+  <table>
+    <thead>
+      <tr><th>Logiciel</th><th>Version la plus courante</th><th>Dernière publiée</th><th>À jour</th><th>En retard</th><th>CVE</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.nom }}</td>
+        <td>{{ row.courante }}</td>
+        <td>{{ row.publiee }}</td>
+        <td>{{ row.a_jour }}</td>
+        <td>{{ row.en_retard }}</td>
+        <td>
+          {% for cve in row.cves %}
+          <span>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.kev %} KEV{% endif %}</span>
+          {% else %}—{% endfor %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Aucun logiciel reconnu.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

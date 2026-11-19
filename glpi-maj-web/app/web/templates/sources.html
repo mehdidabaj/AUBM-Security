@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Sources{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Sources</h1>
+  {% if role_rank[user.role] >= role_rank["technicien"] %}
+  <form method="post" action="/sources/maj">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" hx-post="/sources/maj" hx-target="#progression" hx-swap="outerHTML">Mettre à jour les sources maintenant</button>
+  </form>
+  {% endif %}
+  {% include "sources_progress.html" %}
+</section>
+<section class="card">
+  <h2>État</h2>
+  <table>
+    <thead><tr><th>Source</th><th>État</th><th>Dernière donnée</th><th>Journal</th><th></th></tr></thead>
+    <tbody>
+      {% for source in apercu %}
+      <tr>
+        <td>{{ source.libelle }}</td>
+        <td><span class="badge {{ source.etat }}">{{ source.etat }}</span></td>
+        <td>{{ source.derniere_donnee or "—" }}</td>
+        <td>{{ source.erreur or source.journal or "—" }}</td>
+        <td>
+          {% if role_rank[user.role] >= role_rank["technicien"] %}
+          <button type="button" hx-post="/sources/{{ source.source }}/tester" hx-target="#test-{{ source.source }}" hx-swap="innerHTML">Tester</button>
+          <div id="test-{{ source.source }}"></div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="card">
+  <h2>Journal des collectes</h2>
+  <table>
+    <thead><tr><th>Source</th><th>Début</th><th>Statut</th><th>Éléments</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for ligne in journal %}
+      <tr>
+        <td>{{ ligne.source }}</td>
+        <td>{{ ligne.started_at|paris }}</td>
+        <td>{{ ligne.status }}</td>
+        <td>{{ ligne.items_count }}</td>
+        <td>{{ ligne.error or ligne.message }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">Aucune collecte enregistrée.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

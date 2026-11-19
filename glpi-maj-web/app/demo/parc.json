@@ -1,0 +1,380 @@
+{
+  "previous_without": [19, 20],
+  "previous_overrides": {
+    "9": {
+      "software": [
+        {"name": "Google Chrome", "publisher": "Google", "version": "110.0.5481.100"}
+      ]
+    }
+  },
+  "previous_extra": [
+    {
+      "glpi_id": 99,
+      "name": "PC-ANCIEN",
+      "group": "Stock",
+      "location": "Site annexe",
+      "type": "Portable",
+      "os_name": "Windows 10",
+      "os_version": "22H2",
+      "os_build": "19045.2000",
+      "inventory_days": -40,
+      "agent_days": -40,
+      "agent_version": "1.7",
+      "agent_id": 199,
+      "software": []
+    }
+  ],
+  "computers": [
+    {
+      "glpi_id": 1,
+      "name": "PC-COMPTA-01",
+      "group": "Comptabilité",
+      "location": "Bâtiment A",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -30,
+      "agent_version": "1.21",
+      "agent_id": 101,
+      "software": [
+        {"name": "Google Chrome", "publisher": "Google", "version": "157.0.8103.50"},
+        {"name": "Microsoft Edge", "publisher": "Microsoft", "version": "156.0.4314.58"},
+        {"name": "Mozilla Firefox", "publisher": "Mozilla", "version": "160.0.1"},
+        {"name": "Microsoft 365 Apps", "publisher": "Microsoft", "version": "16.0.20527.20196"},
+        {"name": "GLPI Agent", "publisher": "Teclib", "version": "1.21"}
+      ]
+    },
+    {
+      "glpi_id": 2,
+      "name": "PC-COMPTA-02",
+      "group": "Comptabilité",
+      "location": "Bâtiment A",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9818",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 102,
+      "software": [
+        {"name": "Google Chrome", "publisher": "Google", "version": "157.0.8103.50"},
+        {"name": "Microsoft 365 Apps", "publisher": "Microsoft", "version": "16.0.20527.20150"}
+      ]
+    },
+    {
+      "glpi_id": 3,
+      "name": "PC-RH-01",
+      "group": "Ressources\t\thumaines",
+      "location": "Bâtiment A",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "25H2",
+      "os_build": "26200.7840",
+      "inventory_days": -2,
+      "agent_days": -2,
+      "agent_version": "1.20",
+      "agent_id": 103,
+      "software": [
+        {"name": "Mozilla Firefox", "publisher": "Mozilla", "version": "140.0"}
+      ]
+    },
+    {
+      "glpi_id": 4,
+      "name": "PC-RH-02",
+      "group": "Ressources humaines",
+      "location": "Bâtiment B",
+      "type": "Bureau",
+      "os_name": "Windows 10",
+      "os_version": "22H2",
+      "os_build": "19045.6456",
+      "inventory_days": -2,
+      "agent_days": -2,
+      "agent_version": "1.15",
+      "agent_id": 104,
+      "software": [
+        {"name": "Microsoft Office 2016", "publisher": "Microsoft", "version": "16.0.4266.1001"}
+      ]
+    },
+    {
+      "glpi_id": 5,
+      "name": "PC-DIR-01",
+      "group": "Direction",
+      "location": "Bâtiment A",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 105,
+      "software": [
+        {"name": "Microsoft Office 2016", "publisher": "Microsoft", "version": "16.0.4266.1001"}
+      ]
+    },
+    {
+      "glpi_id": 6,
+      "name": "PC-DIR-02",
+      "group": "Direction",
+      "location": "Bâtiment A",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "24H2",
+      "os_build": "26100.1000",
+      "inventory_days": -3,
+      "agent_days": -3,
+      "agent_version": "1.18",
+      "agent_id": 106,
+      "software": [
+        {"name": "Microsoft Office 2019", "publisher": "Microsoft", "version": "16.0.10396.20020"}
+      ]
+    },
+    {
+      "glpi_id": 7,
+      "name": "PC-JUR-01",
+      "group": "Juridique",
+      "location": "Bâtiment B",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "23H2",
+      "os_build": "22631.4602",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 107,
+      "software": [
+        {"name": "Microsoft Office 2021", "publisher": "Microsoft", "version": "16.0.14332.20721"}
+      ]
+    },
+    {
+      "glpi_id": 8,
+      "name": "PC-JUR-02",
+      "group": "Juridique",
+      "location": "Bâtiment B",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 108,
+      "software": [
+        {"name": "Adobe Acrobat Reader", "publisher": "Adobe", "version": "25.001.20000"}
+      ]
+    },
+    {
+      "glpi_id": 9,
+      "name": "PC-INFO-01",
+      "group": "Informatique",
+      "location": "Bâtiment A",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 109,
+      "software": [
+        {"name": "Google Chrome", "publisher": "Google", "version": "120.0.6099.71"}
+      ]
+    },
+    {
+      "glpi_id": 10,
+      "name": "PC-INFO-02",
+      "group": "Informatique",
+      "location": "Bâtiment A",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 110,
+      "software": [
+        {"name": "Mozilla Firefox", "publisher": "Mozilla", "version": "115.0"}
+      ]
+    },
+    {
+      "glpi_id": 11,
+      "name": "PC-INFO-03",
+      "group": "Informatique",
+      "location": "Bâtiment A",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 111,
+      "software": [
+        {"name": "Java 8", "publisher": "Oracle", "version": "8u401"},
+        {"name": "Java 8", "publisher": "Oracle", "version": "8u391"}
+      ]
+    },
+    {
+      "glpi_id": 12,
+      "name": "PC-MAINT-01",
+      "group": "Maintenance",
+      "location": "Site annexe",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 112,
+      "software": [
+        {"name": "Advanced\tIP  Scanner", "publisher": "Famatech", "version": "2.5.4594.1"}
+      ]
+    },
+    {
+      "glpi_id": 13,
+      "name": "PC-MAINT-02",
+      "group": "Maintenance",
+      "location": "Site annexe",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 113,
+      "software": [
+        {"name": "TeamViewer", "publisher": "TeamViewer", "version": "15.50.5"}
+      ]
+    },
+    {
+      "glpi_id": 14,
+      "name": "PC-LAB-01",
+      "group": "Laboratoire",
+      "location": "Bâtiment B",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 114,
+      "software": [
+        {"name": "Notepad++", "publisher": "Don Ho", "version": "8.7.1"},
+        {"name": "Notepad++", "publisher": "Don Ho", "version": "voir site"},
+        {"name": "Notepad++", "publisher": "Don Ho", "version": "8.6.4"}
+      ]
+    },
+    {
+      "glpi_id": 15,
+      "name": "PC-LAB-02",
+      "group": "Laboratoire",
+      "location": "Bâtiment B",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 115,
+      "software": [
+        {"name": "VLC\tmedia   player", "publisher": "VideoLAN", "version": "3.0.20"}
+      ]
+    },
+    {
+      "glpi_id": 16,
+      "name": "SRV-FICHIERS",
+      "group": "Informatique",
+      "location": "Salle serveurs",
+      "type": "Serveur",
+      "os_name": "Debian",
+      "os_version": "12",
+      "os_build": "",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 116,
+      "software": []
+    },
+    {
+      "glpi_id": 17,
+      "name": "PC-ACCUEIL-01",
+      "group": "Accueil",
+      "location": "Bâtiment A",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -30,
+      "agent_days": -30,
+      "agent_version": "1.12",
+      "agent_id": 117,
+      "software": [
+        {"name": "Mozilla Firefox", "publisher": "Mozilla", "version": "160.0.1"}
+      ]
+    },
+    {
+      "glpi_id": 18,
+      "name": "PC-ACCUEIL-02",
+      "group": "Accueil",
+      "location": "Bâtiment A",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -20,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 118,
+      "software": [
+        {"name": "Mozilla Firefox", "publisher": "Mozilla", "version": "160.0.1"}
+      ]
+    },
+    {
+      "glpi_id": 19,
+      "name": "PC-STOCK-01",
+      "group": "Stock",
+      "location": "Site annexe",
+      "type": "Bureau",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 119,
+      "software": []
+    },
+    {
+      "glpi_id": 20,
+      "name": "PC-STOCK-02",
+      "group": "Stock",
+      "location": "Site annexe",
+      "type": "Portable",
+      "os_name": "Windows 11",
+      "os_version": "26H2",
+      "os_build": "26300.9974",
+      "inventory_days": -1,
+      "agent_days": -1,
+      "agent_version": "1.21",
+      "agent_id": 120,
+      "software": [
+        {"name": "Microsoft Edge", "publisher": "Microsoft", "version": "140.0.0.0"},
+        {"name": "Brave", "publisher": "Brave", "version": "1.70.0"},
+        {"name": "ESET Endpoint Security", "publisher": "ESET", "version": "12.0.1000"},
+        {"name": "ESET Management Agent", "publisher": "ESET", "version": "11.0.100"},
+        {"name": "WinRAR", "publisher": "RARLab", "version": "7.01"},
+        {"name": "Adobe Photoshop 2025", "publisher": "Adobe", "version": "26.0.0"},
+        {"name": "PowerShell 7", "publisher": "Microsoft", "version": "7.4.1"},
+        {"name": "GLPI Agent", "publisher": "Teclib", "version": "1.11"}
+      ]
+    }
+  ]
+}

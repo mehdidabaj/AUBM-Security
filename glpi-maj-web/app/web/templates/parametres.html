@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Paramètres{% endblock %}
+{% block content %}
+{% if message %}<p class="ok">{{ message }}</p>{% endif %}
+<section class="card">
+  <h1>Paramètres</h1>
+  <h2>Connexion GLPI</h2>
+  <form method="post" action="/parametres/glpi-test">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" hx-post="/parametres/glpi-test" hx-target="#glpi-test" hx-swap="innerHTML">Tester la connexion GLPI</button>
+  </form>
+  <div id="glpi-test"></div>
+</section>
+
+<section class="card">
+  <h2>Sources interrogées</h2>
+  <form method="post" action="/parametres/sources">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for source in sources %}
+    <label class="check"><input type="checkbox" name="{{ source.cle }}" {% if source.actif %}checked{% endif %}> {{ source.libelle }}</label>
+    {% endfor %}
+    <button type="submit">Enregistrer les sources</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Règles fixes</h2>
+  <form method="post" action="/parametres/regles" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for cle, valeur in regles.items() %}
+    <label>{{ cle }}
+      <input name="{{ cle }}" value="{{ valeur }}">
+    </label>
+    {% endfor %}
+    <button type="submit">Enregistrer les règles</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Seuils de sévérité</h2>
+  <form method="post" action="/parametres/seuils">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Critique à partir du CVSS
+      <input type="number" step="0.1" name="severity_critical" value="{{ critique }}">
+    </label>
+    <label>Important à partir du CVSS
+      <input type="number" step="0.1" name="severity_important" value="{{ important }}">
+    </label>
+    <label>Inventaire trop ancien (jours)
+      <input type="number" name="stale_days" value="{{ jours }}">
+    </label>
+    <label class="check"><input type="checkbox" name="include_low" {% if inclure_faible %}checked{% endif %}> Compter les actions faibles dans « à jour »</label>
+    <button type="submit">Enregistrer les seuils</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Planification</h2>
+  <p class="muted">Heure de Paris. La collecte des sources précède la vérification du parc.</p>
+  <form method="post" action="/parametres/planification" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Heure <input type="number" min="0" max="23" name="hour" value="{{ heure }}"></label>
+    <label>Minute <input type="number" min="0" max="59" name="minute" value="{{ minute }}"></label>
+    <button type="submit">Enregistrer l'heure</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Courriel</h2>
+  <p class="muted">Désactivé par défaut. Le premier passage mémorise les CVE déjà connues sans envoyer de message.</p>
+  <form method="post" action="/parametres/smtp">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="check"><input type="checkbox" name="smtp_enabled" {% if smtp.enabled %}checked{% endif %}> Activer l'envoi</label>
+    <label>Serveur <input name="smtp_host" value="{{ smtp.host }}"></label>
+    <label>Port <input type="number" name="smtp_port" value="{{ smtp.port }}"></label>
+    <label>Utilisateur <input name="smtp_user" value="{{ smtp.user }}"></label>
+    <label>Mot de passe <input type="password" name="smtp_password" placeholder="Laisser vide pour conserver"></label>
+    <label>Expéditeur <input name="smtp_from" value="{{ smtp.sender }}"></label>
+    <label>Destinataire <input name="smtp_to" value="{{ smtp.recipient }}"></label>
+    <label class="check"><input type="checkbox" name="smtp_tls" {% if smtp.tls %}checked{% endif %}> TLS</label>
+    <button type="submit">Enregistrer le courriel</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Comptes</h2>
+  <form method="post" action="/comptes">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Identifiant <input name="username" required></label>
+    <label>Mot de passe <input type="password" name="password" required></label>
+    <label>Rôle
+      <select name="role">
+        <option value="lecture">Lecture</option>
+        <option value="technicien">Technicien</option>
+        <option value="admin">Administrateur</option>
+      </select>
+    </label>
+    <button type="submit">Créer le compte</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Connexion · Suivi des mises à jour</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="auth-wrap">
+    <form class="card auth-card" method="post" action="/connexion">
+      <p class="eyebrow">Application interne</p>
+      <h1>Suivi des mises à jour</h1>
+      <p class="muted">Inventaire GLPI, versions publiées et actions à mener sur le parc.</p>
+      {% if error %}
+      <p class="alert" role="alert">{{ error }}</p>
+      {% endif %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="username">Identifiant</label>
+      <input id="username" name="username" autocomplete="username" required>
+      <label for="password">Mot de passe</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Se connecter</button>
+    </form>
+  </main>
+</body>
+</html>
