@@ -1,0 +1,10 @@
+[Unit]
+Description=Sauvegarde quotidienne de la base glpi-maj-web
+
+[Service]
+Type=oneshot
+User=glpimaj
+Group=glpimaj
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/glpi-maj-web/deploy/backup.sh
+SyslogIdentifier=glpi-maj-web-backup
