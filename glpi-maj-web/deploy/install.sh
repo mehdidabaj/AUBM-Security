@@ -41,7 +41,7 @@ verifier_ports_libres "$APP_PORT" "$WEB_PORT"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y python3-venv python3-pip git sqlite3 fonts-dejavu curl ca-certificates rsync openssl
+apt-get install -y python3-venv python3-pip git sqlite3 fonts-dejavu curl ca-certificates rsync openssl tzdata
 
 if ! id glpimaj >/dev/null 2>&1; then
     useradd --system --home-dir /opt/glpi-maj-web --shell /usr/sbin/nologin glpimaj

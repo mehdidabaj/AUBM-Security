@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -24,9 +27,12 @@ def sqlite_path_from_url(url: str) -> Path | None:
 
 def ensure_database_parent(settings: Settings) -> None:
     path = sqlite_path_from_url(settings.database_url)
-    if path is not None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.warning("Impossible de préparer %s. Le service démarre quand même.", settings.data_dir)
 
 
 def make_engine(url: str):

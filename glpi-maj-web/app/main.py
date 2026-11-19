@@ -49,9 +49,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db.close()
         scheduler = None
         if settings.scheduler_enabled:
-            from app.scheduler import start_scheduler
+            try:
+                from app.scheduler import start_scheduler
 
-            scheduler = start_scheduler(app)
+                scheduler = start_scheduler(app)
+            except Exception:
+                logger.exception("Le planificateur n'a pas démarré. L'interface reste disponible.")
         yield
         if scheduler is not None:
             scheduler.shutdown(wait=False)

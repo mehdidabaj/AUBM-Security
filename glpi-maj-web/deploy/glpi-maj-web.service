@@ -7,10 +7,11 @@ Wants=network-online.target
 User=glpimaj
 Group=glpimaj
 WorkingDirectory=/opt/glpi-maj-web
-EnvironmentFile=/etc/glpi-maj-web/config.env
+Environment=APP_PORT=8001
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=TZ=Europe/Paris
-ExecStart=/bin/sh -c 'exec /opt/glpi-maj-web/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "$APP_PORT"'
+EnvironmentFile=/etc/glpi-maj-web/config.env
+ExecStart=/opt/glpi-maj-web/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${APP_PORT}
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

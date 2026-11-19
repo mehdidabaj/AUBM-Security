@@ -14,6 +14,23 @@ def test_scripts_passent_bash_n():
         subprocess.run(["bash", "-n", str(script)], check=True)
 
 
+def test_mise_a_jour_refuse_un_depot_sans_application(tmp_path):
+    depot = tmp_path / "depot"
+    depot.mkdir()
+    (depot / "README.md").write_text("racine\n", encoding="utf-8")
+    app = depot / "glpi-maj-web"
+    (app / "app").mkdir(parents=True)
+    (app / "app" / "main.py").write_text("app = None\n", encoding="utf-8")
+    (app / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    script = f"""
+source '{DEPLOY / "layout.sh"}'
+resolve_app_dir '{depot}' '{depot}'
+"""
+    found = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
+    assert found.returncode == 0
+    assert found.stdout.strip() == str(app)
+
+
 def test_le_port_8080_est_refuse():
     refused = _bash("ports_a_verifier 8080 8090")
     assert refused.returncode != 0

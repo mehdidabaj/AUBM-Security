@@ -13,11 +13,14 @@ if [ ! -f /etc/glpi-maj-web/repo_root ]; then
 fi
 
 depot="$(cat /etc/glpi-maj-web/repo_root)"
-application="${depot}"
+hint=""
 if [ -s /etc/glpi-maj-web/app_dir ]; then
-    application="$(cat /etc/glpi-maj-web/app_dir)"
+    hint="$(cat /etc/glpi-maj-web/app_dir)"
 fi
+# shellcheck source=layout.sh
+. "$(cd "$(dirname "$0")" && pwd)/layout.sh"
 git -C "$depot" pull --ff-only
+application="$(resolve_app_dir "$depot" "$hint")"
 rsync -a --delete \
     --exclude '.venv' \
     --exclude '__pycache__' \
