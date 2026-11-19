@@ -149,3 +149,21 @@ th { font-size: 0.82rem; color: var(--muted); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.8rem; }
 .stat strong { display: block; font-size: 1.6rem; }
 .chart-box { height: 280px; }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.8rem; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem; margin: 0; }
+.facts div { margin: 0; }
+.facts dt { color: var(--muted); font-size: 0.82rem; }
+.facts dd { margin: 0; }
+.action { border-top: 1px solid var(--line); padding-top: 0.8rem; margin-top: 0.8rem; }
+.action h3 { font-size: 1rem; }
+.suivi { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem; }
+.stack label { margin-top: 0.5rem; }
+.check { display: flex; align-items: center; gap: 0.45rem; font-weight: 500; }
+.check input { width: auto; }
+.ok { color: var(--ok); }
+.badge.secours, .badge.conserve { background: var(--important); }
+.badge.alerte { background: var(--critique); }
+.badge.ok { background: var(--ok); }
+.badge.a_jour, .badge.autre { background: var(--ok); }
+.badge.faible { background: var(--faible); }
+.progress { margin-top: 0.8rem; }

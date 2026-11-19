@@ -134,6 +134,42 @@ def update_sources(
     return parent
 
 
+def probe_source(settings: Settings, key: str, http: httpx.Client | None = None) -> dict:
+    """Vérifie qu'une source répond, sans lancer une collecte complète."""
+    from app.sources.catalog import FEEDS, KEV_URL, MSRC_UPDATES, NVD_URL
+
+    targets = {
+        "winget": "https://github.com/microsoft/winget-pkgs",
+        "github": "https://api.github.com/rate_limit",
+        "endoflife": "https://endoflife.date/api/windows.json",
+        "msrc": MSRC_UPDATES,
+        "nvd": NVD_URL,
+        "kev": KEV_URL,
+        "feeds": FEEDS["chrome"],
+    }
+    url = targets.get(key)
+    if not url:
+        return {"ok": False, "message": "Source inconnue."}
+    own = http is None
+    client = http or make_client()
+    try:
+        params = {"resultsPerPage": 1} if key == "nvd" else None
+        headers = {"User-Agent": USER_AGENT}
+        if key == "nvd" and settings.nvd_api_key:
+            headers["apiKey"] = settings.nvd_api_key
+        if key == "github" and settings.github_token:
+            headers["Authorization"] = f"Bearer {settings.github_token}"
+        response = client.get(url, params=params, headers=headers, timeout=20)
+        if response.status_code < 400:
+            return {"ok": True, "message": f"{key} répond (HTTP {response.status_code})."}
+        return {"ok": False, "message": f"{key} a répondu HTTP {response.status_code}."}
+    except Exception as exc:
+        return {"ok": False, "message": f"{key} est injoignable : {exc}"}
+    finally:
+        if own:
+            client.close()
+
+
 def launch_source_update(app) -> None:
     """Collecte en arrière-plan, puis nouvelle vérification du parc."""
 

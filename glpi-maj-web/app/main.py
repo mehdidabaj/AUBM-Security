@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import OperationalError
 
 from app.config import Settings, load_settings
 from app.database import ensure_database_parent, make_engine, make_session_factory
+from app.web.pages import router as pages_router
 from app.web.routes import router
 
 logger = logging.getLogger(__name__)
@@ -58,17 +61,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = make_engine(settings.database_url)
     app.state.engine = engine
     app.state.SessionLocal = make_session_factory(engine)
-    app.state.templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    def paris(value: datetime | None) -> str:
+        if value is None:
+            return "—"
+        aware = value.replace(tzinfo=timezone.utc)
+        return aware.astimezone(ZoneInfo("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+
+    templates.env.filters["paris"] = paris
+    app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(router)
+    app.include_router(pages_router)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):
         detail = exc.detail if isinstance(exc.detail, str) else "Erreur."
         if "application/json" in request.headers.get("accept", "") or request.url.path.startswith("/api/"):
             return JSONResponse({"detail": detail}, status_code=exc.status_code)
-        if exc.status_code == 401 and request.method == "GET":
-            return JSONResponse({"detail": detail}, status_code=401)
+        accepts = request.headers.get("accept", "")
+        if exc.status_code == 401 and request.method == "GET" and "application/json" not in accepts:
+            return RedirectResponse("/connexion", status_code=303)
         return HTMLResponse(f"<p>{detail}</p>", status_code=exc.status_code)
 
     return app

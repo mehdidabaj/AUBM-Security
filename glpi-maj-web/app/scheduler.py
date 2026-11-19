@@ -35,6 +35,15 @@ def start_scheduler(app) -> BackgroundScheduler:
     return scheduler
 
 
+def apply_schedule(app) -> None:
+    """Reprend l'heure enregistrée si le planificateur tourne déjà."""
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is None:
+        return
+    hour, minute = _schedule(app)
+    scheduler.reschedule_job("nuit", trigger="cron", hour=hour, minute=minute)
+
+
 def _schedule(app) -> tuple[int, int]:
     from app.settings_store import get_setting
 

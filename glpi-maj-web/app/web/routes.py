@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth.security import CSRF_COOKIE, ROLE_RANK, SESSION_COOKIE, new_token
@@ -106,14 +106,6 @@ async def logout(request: Request, db: Session = Depends(get_db)) -> RedirectRes
     return response
 
 
-@router.get("/", response_class=HTMLResponse)
-def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    user = current_user(request, db)
-    if user is None:
-        return RedirectResponse("/connexion", status_code=303)
-    return render(request, "home.html")
-
-
 @router.post("/comptes", response_class=HTMLResponse)
 async def create_account(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     await enforce_csrf(request, db)
@@ -142,8 +134,13 @@ async def launch_verification(request: Request, db: Session = Depends(get_db)):
         run = run_verification(db, request.app.state.settings)
     except GlpiError as exc:
         raise HTTPException(status_code=502, detail=exc.message) from exc
-    return {
-        "id": run.id,
-        "ordinateurs": run.computer_count,
-        "resume": json.loads(run.summary_json or "{}"),
-    }
+    response = JSONResponse(
+        {
+            "id": run.id,
+            "ordinateurs": run.computer_count,
+            "resume": json.loads(run.summary_json or "{}"),
+        }
+    )
+    if request.headers.get("hx-request"):
+        response.headers["HX-Redirect"] = "/"
+    return response

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Logiciels à associer{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Logiciels à associer</h1>
+  <p class="muted">Ces noms n'ont pas de correspondance dans le référentiel. Une suggestion est proposée quand le nom est proche.</p>
+  {% if not inconnus %}
+  <p>Tous les logiciels inventoriés sont associés.</p>
+  {% endif %}
+  {% for item in inconnus %}
+  <form method="post" action="/logiciels/a-associer" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="nom" value="{{ item.nom }}">
+    <p><strong>{{ item.nom }}</strong>{% if item.suggestion_libelle %} — suggestion : {{ item.suggestion_libelle }}{% endif %}</p>
+    {% if role_rank[user.role] >= role_rank["technicien"] %}
+    <label>Produit
+      <select name="produit">
+        {% for produit in produits %}
+        <option value="{{ produit.slug }}" {% if produit.slug == item.suggestion %}selected{% endif %}>{{ produit.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Associer</button>
+    {% endif %}
+  </form>
+  {% endfor %}
+</section>
+{% endblock %}

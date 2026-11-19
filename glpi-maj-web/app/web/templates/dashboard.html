@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Bonjour {{ user.username }}</h1>
+  {% if not data.run %}
+  <p>Aucune vérification n'a encore été enregistrée.</p>
+  {% else %}
+  <p class="muted">Dernière vérification le {{ data.run.finished_at|paris }} (heure de Paris), origine {{ data.run.origin }}.</p>
+  {% if data.a_mettre_a_jour == 0 %}
+  <p class="ok">Tout est à jour : aucune action critique ou importante.</p>
+  {% else %}
+  <p>{{ data.a_mettre_a_jour }} poste(s) ont encore une action critique ou importante.</p>
+  {% endif %}
+  {% endif %}
+  {% if role_rank[user.role] >= role_rank["technicien"] %}
+  <form method="post" action="/verification" hx-post="/verification" hx-swap="none">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Lancer une vérification</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if data.run %}
+<section class="grid">
+  <article class="card stat"><span>Postes analysés</span><strong>{{ data.analyses }}</strong></article>
+  <article class="card stat"><span>À jour</span><strong>{{ data.a_jour }}</strong></article>
+  <article class="card stat"><span>À mettre à jour</span><strong>{{ data.a_mettre_a_jour }}</strong></article>
+  <article class="card stat"><span>Critiques</span><strong>{{ data.critiques }}</strong></article>
+  <article class="card stat"><span>Actions</span><strong>{{ data.actions }}</strong></article>
+</section>
+
+<section class="split">
+  <article class="card">
+    <h2>Actions par logiciel</h2>
+    <div class="chart-box"><canvas id="chart-logiciels"></canvas></div>
+  </article>
+  <article class="card">
+    <h2>Évolution</h2>
+    <div class="chart-box"><canvas id="chart-evolution"></canvas></div>
+  </article>
+</section>
+
+<section class="split">
+  <article class="card">
+    <h2>Depuis la vérification précédente</h2>
+    <p>{{ (data.resume.nouvelles_actions or [])|length }} nouvelle(s) action(s).</p>
+    <p>{{ (data.resume.postes_corriges or [])|length }} poste(s) corrigé(s) encore présent(s).</p>
+    <p>{{ (data.resume.postes_ajoutes or [])|length }} poste(s) ajouté(s), {{ (data.resume.postes_retires or [])|length }} retiré(s).</p>
+  </article>
+  <article class="card">
+    <h2>Agents silencieux</h2>
+    {% if data.silencieux %}
+    <ul>
+      {% for nom in data.silencieux %}<li>{{ nom }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Aucun agent silencieux au-delà du délai.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="card">
+  <h2>État des sources</h2>
+  <table>
+    <thead><tr><th>Source</th><th>État</th><th>Dernière donnée</th></tr></thead>
+    <tbody>
+      {% for source in data.sources %}
+      <tr>
+        <td>{{ source.libelle }}</td>
+        <td><span class="badge {{ source.etat }}">{{ source.etat }}</span></td>
+        <td>{{ source.derniere_donnee or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<script id="chart-data" type="application/json">{{ chart|tojson }}</script>
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/dashboard.js"></script>
+{% endif %}
+{% endblock %}
