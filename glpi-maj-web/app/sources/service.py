@@ -142,8 +142,10 @@ def launch_source_update(app) -> None:
         try:
             update_sources(db, app.state.settings)
             from app.glpi.service import run_verification
+            from app.notify import notify_changes
 
             run_verification(db, app.state.settings)
+            notify_changes(db, app.state.settings)
         finally:
             db.close()
 

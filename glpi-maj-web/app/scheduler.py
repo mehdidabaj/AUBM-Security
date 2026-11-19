@@ -18,8 +18,11 @@ def start_scheduler(app) -> BackgroundScheduler:
         try:
             from app.sources.service import update_sources
 
+            from app.notify import notify_changes
+
             update_sources(db, app.state.settings)
             run_verification(db, app.state.settings)
+            notify_changes(db, app.state.settings)
         except Exception:
             logger.exception("La collecte planifiée a échoué")
         finally:

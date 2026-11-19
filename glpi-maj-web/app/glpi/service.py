@@ -99,6 +99,11 @@ def save_check(
         )
     db.commit()
     db.refresh(run)
+    if not error:
+        from app.actions.engine import compute_check
+
+        compute_check(db, run, previous)
+        db.refresh(run)
     return run
 
 
