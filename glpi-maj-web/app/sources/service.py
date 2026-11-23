@@ -37,10 +37,9 @@ from app.timeutils import utcnow
 
 FALLBACK_PATH = Path(__file__).resolve().parents[1] / "referentiel" / "secours.json"
 NVD_RETRY = {403, 429, 503}
-CERTFR_AVIS_DAYS = 120
-CERTFR_ALERTE_DAYS = 180
-CERTFR_MAX_AVIS = 25
-CERTFR_MAX_ALERTES = 15
+VULN_RECENT_DAYS = 120
+CERTFR_MAX_AVIS = 80
+CERTFR_MAX_ALERTES = 20
 
 
 def load_fallback_if_needed(db: Session, path: Path | None = None) -> int:
@@ -406,20 +405,26 @@ def _collect_msrc(db, client, products, sleep, now) -> int:
 def _collect_nvd(db, settings, client, products, sleep, limiter: RateLimiter, now) -> int:
     wanted = _wanted(products, lambda product: product.cpe)
     count = 0
+    horizon = now - timedelta(days=VULN_RECENT_DAYS)
     for product in wanted:
         previous = payload_of(get_cache(db, "nvd", product.slug))
-        params = {"cpeName": product.cpe, "resultsPerPage": 50}
-        if previous.get("last_mod_end"):
-            end = now
-            start = datetime.fromisoformat(previous["last_mod_end"])
-            if end - start > timedelta(days=120):
-                start = end - timedelta(days=120)
-            params["lastModStartDate"] = start.strftime("%Y-%m-%dT%H:%M:%S.000")
-            params["lastModEndDate"] = end.strftime("%Y-%m-%dT%H:%M:%S.000")
+        start, end = _nvd_window(now, previous.get("last_mod_end"), horizon)
+        params = {
+            "cpeName": product.cpe,
+            "resultsPerPage": 50,
+            "lastModStartDate": start.strftime("%Y-%m-%dT%H:%M:%S.000"),
+            "lastModEndDate": end.strftime("%Y-%m-%dT%H:%M:%S.000"),
+        }
         response = _nvd_get(client, params, settings.nvd_api_key, limiter, sleep)
         parsed = parse_nvd(response.json())
-        merged = {item["id"]: item for item in previous.get("cves", [])}
+        merged = {
+            item["id"]: item
+            for item in previous.get("cves", [])
+            if _recent_stamp(item.get("modified"), horizon)
+        }
         for item in parsed:
+            if not item.get("modified"):
+                item["modified"] = now.strftime("%Y-%m-%dT%H:%M:%S")
             merged[item["id"]] = item
         put_cache(
             db,
@@ -431,6 +436,29 @@ def _collect_nvd(db, settings, client, products, sleep, limiter: RateLimiter, no
         )
         count += len(merged)
     return count
+
+
+def _nvd_window(now: datetime, previous_end: object, horizon: datetime) -> tuple[datetime, datetime]:
+    """Fenêtre NVD d'au plus 120 jours, en reprenant après la dernière lecture."""
+    end = now
+    start = horizon + timedelta(seconds=1)
+    if previous_end:
+        try:
+            parsed = datetime.fromisoformat(str(previous_end))
+        except ValueError:
+            parsed = None
+        if parsed is not None and start < parsed < end:
+            start = parsed
+    return start, end
+
+
+def _recent_stamp(value: object, horizon: datetime) -> bool:
+    text = str(value or "")[:19]
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return False
+    return moment >= horizon
 
 
 def _nvd_get(client, params, api_key: str, limiter: RateLimiter, sleep) -> httpx.Response:
@@ -460,8 +488,15 @@ def _collect_kev(db, client, products, sleep, now) -> int:
     if response.status_code >= 400:
         raise RuntimeError(f"CISA KEV a répondu HTTP {response.status_code}.")
     parsed = parse_kev(response.json())
+    horizon = now - timedelta(days=VULN_RECENT_DAYS)
+    recent = {
+        cve_id: row
+        for cve_id, row in (parsed.get("cves") or {}).items()
+        if _recent_stamp(row.get("date_added"), horizon)
+    }
+    parsed["cves"] = recent
     put_cache(db, "kev", "catalog", parsed, origin="live", now=now)
-    return len(parsed["cves"])
+    return len(recent)
 
 
 def _collect_certfr(db, client, products, sleep, now) -> int:
@@ -472,8 +507,8 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         return len((payload_of(cached).get("cves") or {}))
     avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
     alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
-    selected = _certfr_pick(avis, products, now, CERTFR_AVIS_DAYS, CERTFR_MAX_AVIS, "avis")
-    selected += _certfr_pick(alertes, products, now, CERTFR_ALERTE_DAYS, CERTFR_MAX_ALERTES, "alerte")
+    selected = _certfr_pick(avis, products, now, VULN_RECENT_DAYS, CERTFR_MAX_AVIS, "avis")
+    selected += _certfr_pick(alertes, products, now, VULN_RECENT_DAYS, CERTFR_MAX_ALERTES, "alerte")
     cves: dict[str, dict] = {}
     for item in selected:
         response = get_with_retries(

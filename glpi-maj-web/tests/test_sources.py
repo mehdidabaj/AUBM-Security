@@ -110,6 +110,8 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
             return httpx.Response(200, json=json.loads(_read("github_notepad.json")), headers={"ETag": "abc"})
         if "services.nvd.nist.gov" in url:
             assert request.headers["apikey"] == "nvd-key"
+            assert "lastModStartDate" in request.url.params
+            assert "lastModEndDate" in request.url.params
             cpe = request.url.params["cpeName"]
             if "chrome" in cpe:
                 return httpx.Response(200, json=json.loads(_read("nvd_chrome.json")))
@@ -155,6 +157,17 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
     db = app.state.SessionLocal()
     try:
         load_fallback_if_needed(db)
+        put_cache(
+            db,
+            "nvd",
+            "chrome",
+            {
+                "cves": [{"id": "CVE-2010-0001", "cvss": 9.0, "modified": "2010-01-01T00:00:00", "url": "https://nvd.nist.gov/vuln/detail/CVE-2010-0001"}],
+                "last_mod_end": "2026-11-17T03:00:00",
+            },
+            origin="live",
+            now=datetime(2026, 11, 17, 3, 0, 0),
+        )
         assert payload_of(get_cache(db, "fallback", "chrome"))["version"] == "157.0.8103.50"
         assert payload_of(get_cache(db, "fallback", "java8"))["mode"] == "gt"
         assert payload_of(get_cache(db, "fallback", "office-2016"))["eol"] is True
@@ -172,8 +185,12 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
         assert version_target(db, "chrome")["version"] == "158.0.0.0"
         assert version_target(db, "chrome")["source"] == "winget"
         assert payload_of(get_cache(db, "github", "notepadpp"))["version"] == "8.9.7"
-        assert payload_of(get_cache(db, "nvd", "chrome"))["cves"][0]["cvss"] == 9.1
-        assert "CVE-2026-1000" in payload_of(get_cache(db, "kev", "catalog"))["cves"]
+        chrome_cves = {item["id"]: item for item in payload_of(get_cache(db, "nvd", "chrome"))["cves"]}
+        assert chrome_cves["CVE-2026-1000"]["cvss"] == 9.1
+        assert "CVE-2010-0001" not in chrome_cves
+        kev_cves = payload_of(get_cache(db, "kev", "catalog"))["cves"]
+        assert "CVE-2026-1000" in kev_cves
+        assert "CVE-2014-0160" not in kev_cves
         certfr = payload_of(get_cache(db, "certfr", "catalog"))["cves"]
         assert certfr["CVE-2026-2857"]["products"] == ["chrome"]
         assert certfr["CVE-2026-2857"]["alert"] is False

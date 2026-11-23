@@ -123,6 +123,7 @@ def parse_nvd(payload: dict) -> list[dict]:
                 "id": cve_id,
                 "cvss": score,
                 "summary": summary,
+                "modified": cve.get("lastModified") or "",
                 "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
             }
         )
