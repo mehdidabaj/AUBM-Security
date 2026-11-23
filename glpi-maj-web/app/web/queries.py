@@ -50,13 +50,12 @@ def _computers(db: Session, run: CheckRun) -> list[ComputerRecord]:
 def computer_views(db: Session, settings: Settings, params: dict) -> dict:
     run = visible_run(db)
     if run is None:
-        return {"run": None, "en_cours": False, "lus": 0, "installations": 0, "rows": [], "services": [], "lieux": [], "logiciels": []}
+        return {"run": None, "en_cours": False, "lus": 0, "installations": 0, "rows": [], "services": [], "logiciels": []}
     grouped = actions_by_computer(db, run)
     count_low = include_low(db)
     en_cours = run.status == "running"
     rows = []
     services = set()
-    lieux = set()
     logiciels = set()
     lus = 0
     installations = 0
@@ -72,11 +71,8 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
             up_to_date = is_up_to_date(actions, count_low)
         names = sorted({item.name for item in computer.software})
         services.add(computer.group_name)
-        lieux.add(computer.location)
         logiciels.update(names)
         if params.get("service") and computer.group_name != params["service"]:
-            continue
-        if params.get("lieu") and computer.location != params["lieu"]:
             continue
         if params.get("priorite") and priority != params["priorite"]:
             continue
@@ -94,7 +90,6 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
                 "glpi_id": computer.glpi_id,
                 "nom": computer.name,
                 "service": computer.group_name,
-                "lieu": computer.location,
                 "priorite": priority,
                 "priorite_libelle": SEVERITY_LABELS.get(priority, priority),
                 "a_jour": up_to_date,
@@ -123,7 +118,6 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
         "installations": installations,
         "rows": rows,
         "services": sorted(item for item in services if item),
-        "lieux": sorted(item for item in lieux if item),
         "logiciels": sorted(logiciels),
     }
 

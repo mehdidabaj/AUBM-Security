@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 def _params(request: Request) -> dict[str, str]:
-    return {key: request.query_params.get(key, "") for key in ("service", "lieu", "priorite", "a_jour", "logiciel", "q", "tri", "sens")}
+    return {key: request.query_params.get(key, "") for key in ("service", "priorite", "a_jour", "logiciel", "q", "tri", "sens")}
 
 
 def _live_inchange(request: Request, db: Session) -> bool:
@@ -319,7 +319,7 @@ async def tester_glpi(request: Request, db: Session = Depends(get_db)) -> HTMLRe
         return HTMLResponse(f'<p class="alert">{exc.message}</p>')
     mode = "démo" if report["mode"] == "demo" else "GLPI"
     return HTMLResponse(
-        f'<p class="ok">Connexion {mode} : {report["ordinateurs"]} ordinateurs, {report["agents"]} agents.</p>'
+        f'<p class="ok">Connexion {mode} : {report["ordinateurs"]} ordinateurs.</p>'
     )
 
 

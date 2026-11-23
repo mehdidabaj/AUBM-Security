@@ -16,7 +16,7 @@ MESSAGES = {
     ),
     "ERROR_RIGHT_MISSING": (
         "Droit manquant (ERROR_RIGHT_MISSING). "
-        "Le profil de la session API doit pouvoir lire les ordinateurs et les agents. "
+        "Le profil de la session API doit pouvoir lire les ordinateurs, leur système et leurs logiciels. "
         "Sur le compte api-maj, choisissez Super-Admin comme profil par défaut."
     ),
     "ERROR_SESSION_TOKEN_INVALID": (

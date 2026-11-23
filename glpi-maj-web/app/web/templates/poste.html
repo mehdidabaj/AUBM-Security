@@ -8,11 +8,7 @@
     {% if detail.en_cours and not detail.actions %} Lecture en cours{% elif detail.a_jour %} À jour{% else %} À mettre à jour{% endif %}</p>
   <dl class="facts">
     <div><dt>Service</dt><dd>{{ detail.computer.group_name or "—" }}</dd></div>
-    <div><dt>Lieu</dt><dd>{{ detail.computer.location or "—" }}</dd></div>
-    <div><dt>Système</dt><dd>{{ detail.computer.os_name }} {{ detail.computer.os_version }}</dd></div>
-    <div><dt>Build</dt><dd>{{ detail.computer.os_build or "—" }}</dd></div>
-    <div><dt>Dernier inventaire</dt><dd>{{ detail.computer.last_inventory_at|paris }}</dd></div>
-    <div><dt>Agent</dt><dd>{% if detail.computer.agent %}{{ detail.computer.agent.version or "version inconnue" }}, contact {{ detail.computer.agent.last_contact|paris }}{% else %}Aucun agent{% endif %}</dd></div>
+    <div><dt>Système</dt><dd>{{ detail.computer.os_name }} {{ detail.computer.os_version }}{% if detail.computer.os_build %} ({{ detail.computer.os_build }}){% endif %}</dd></div>
   </dl>
   <p><a href="{{ detail.lien }}" target="_blank" rel="noopener">Fiche GLPI</a></p>
 </section>

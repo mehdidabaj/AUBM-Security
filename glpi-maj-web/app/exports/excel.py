@@ -28,9 +28,6 @@ WRAP = Alignment(wrap_text=True, vertical="center")
 FIXED = [
     "Poste",
     "Service",
-    "Lieu",
-    "Dernière remontée agent",
-    "Version agent",
     "Dernier inventaire",
     "Tout est à jour ?",
     "Priorité",
@@ -52,9 +49,6 @@ def build_workbook(db: Session, settings: Settings) -> bytes:
         values = [
             poste["nom"],
             poste["service"],
-            poste["lieu"],
-            poste["agent_contact"],
-            poste["agent_version"],
             poste["inventaire"],
             poste["a_jour"],
             poste["priorite_libelle"],
@@ -67,7 +61,7 @@ def build_workbook(db: Session, settings: Settings) -> bytes:
             values.append(cell["texte"] if cell else "")
         sheet.append(values)
         _paint(sheet, index, poste, len(FIXED), model["produits"])
-        link = sheet.cell(index, 11)
+        link = sheet.cell(index, FIXED.index("Lien GLPI") + 1)
         link.hyperlink = poste["lien"]
         link.font = LINK_FONT
     _decorate(sheet, len(headers), len(model["postes"]))
@@ -79,11 +73,11 @@ def build_workbook(db: Session, settings: Settings) -> bytes:
 
 
 def _paint(sheet, row: int, poste: dict, fixed: int, produits: list[dict]) -> None:
-    priority = sheet.cell(row, 8)
+    priority = sheet.cell(row, FIXED.index("Priorité") + 1)
     fill = FILLS.get(poste["priorite"])
     if fill is not None:
         priority.fill = fill
-    up = sheet.cell(row, 7)
+    up = sheet.cell(row, FIXED.index("Tout est à jour ?") + 1)
     up.fill = FILLS["a_jour"] if poste["a_jour"] == "Oui" else FILLS["important"]
     for offset, product in enumerate(produits, start=fixed + 1):
         cell_data = poste["cellules"].get(product["slug"])
@@ -122,7 +116,7 @@ def _plan(book: Workbook, model: dict) -> None:
             letter = get_column_letter(column)
             cell = sheet.cell(index, column)
             cell.value = f"='{SHEET_PC}'!{letter}{index}"
-            if column == 11:
+            if column == FIXED.index("Lien GLPI") + 1:
                 cell.value = f'=HYPERLINK(\'{SHEET_PC}\'!{letter}{index},\'{SHEET_PC}\'!{letter}{index})'
                 cell.font = LINK_FONT
         todo = sheet.cell(index, len(FIXED) + 1)
@@ -130,7 +124,7 @@ def _plan(book: Workbook, model: dict) -> None:
         todo.alignment = WRAP
         sheet.cell(index, len(FIXED) + 2).value = "À faire"
     _decorate(sheet, len(headers), len(model["postes"]))
-    sheet.column_dimensions["L"].width = 42
+    sheet.column_dimensions[get_column_letter(len(FIXED) + 1)].width = 42
     if model["postes"]:
         validation = DataValidation(type="list", formula1="=Listes!$A$1:$A$3", allow_blank=False)
         validation.error = "Choisissez À faire, En cours ou Fait."

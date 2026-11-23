@@ -14,8 +14,8 @@ from app.actions.rules import SEVERITY_RANK
 from app.config import Settings
 from app.glpi.client import GlpiClient, _software_item, assemble
 from app.glpi.errors import GlpiError
-from app.glpi.normalize import extract_build, label, linked_id, normalize_name, parse_glpi_datetime
-from app.glpi.types import AgentItem, ComputerItem
+from app.glpi.normalize import extract_build, label, linked_id, normalize_name
+from app.glpi.types import ComputerItem
 from app.models.actions import ComputedAction
 from app.models.inventory import AgentRecord, CheckRun, ComputerRecord, SoftwareInstall
 from app.timeutils import utcnow
@@ -292,16 +292,13 @@ def noter_page(db: Session, run: CheckRun, live: _LiveCatalog, step: str, chunk:
                 live.version_by_id[int(row["id"])] = row
         return
     if step == "ordinateurs":
-        _memoriser_postes(db, run, assemble(chunk, [], [], [], [], []), details=False)
+        _memoriser_postes(db, run, assemble(chunk, [], [], [], []), details=False)
         return
     if step == "systèmes":
         _appliquer_systemes(db, run, live, chunk)
         return
     if step == "installations":
         _appliquer_installations(db, run, live, chunk)
-        return
-    if step == "agents":
-        _appliquer_agents(db, run, live, chunk)
 
 
 def _memoriser_postes(db: Session, run: CheckRun, items: list[ComputerItem], *, details: bool) -> None:
@@ -437,46 +434,13 @@ def _appliquer_installations(db: Session, run: CheckRun, live: _LiveCatalog, chu
     db.flush()
 
 
-def _appliquer_agents(db: Session, run: CheckRun, live: _LiveCatalog, chunk: list) -> None:
-    by_item: dict[int, AgentItem] = {}
-    for row in chunk:
-        if row.get("itemtype") not in (None, "", "Computer"):
-            continue
-        glpi_id = linked_id(row.get("items_id"))
-        if glpi_id is None:
-            continue
-        by_item[glpi_id] = AgentItem(
-            glpi_id=int(row["id"]) if row.get("id") is not None else None,
-            last_contact=parse_glpi_datetime(row.get("last_contact")),
-            version=normalize_name(row.get("version")),
-            itemtype=normalize_name(row.get("itemtype") or "Agent") or "Agent",
-        )
-    found = _records(db, run, live, set(by_item))
-    for glpi_id, agent in by_item.items():
-        record = found.get(glpi_id)
-        if record is None:
-            continue
-        db.execute(delete(AgentRecord).where(AgentRecord.computer_id == record.id))
-        db.flush()
-        db.add(
-            AgentRecord(
-                computer_id=record.id,
-                glpi_id=agent.glpi_id,
-                last_contact=agent.last_contact,
-                version=agent.version,
-                itemtype=agent.itemtype,
-            )
-        )
-    db.flush()
-
-
 def _annulation_demandee(db: Session, run_id: int) -> bool:
     value = db.scalar(select(CheckRun.cancel_requested).where(CheckRun.id == run_id))
     return bool(value)
 
 
 def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRecord], rows: list) -> None:
-    """Recopie le système, les logiciels et l'agent des postes dont GLPI n'a pas bougé."""
+    """Recopie le système et les logiciels des postes dont GLPI n'a pas bougé."""
     ids: set[int] = set()
     for row in rows:
         try:
@@ -502,6 +466,8 @@ def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRec
         target.os_name = source.os_name
         target.os_version = source.os_version
         target.os_build = source.os_build
+        target.location = ""
+        target.computer_type = ""
         db.flush()
         db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id == target.id))
         db.execute(delete(AgentRecord).where(AgentRecord.computer_id == target.id))
@@ -512,16 +478,6 @@ def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRec
                     name=software.name,
                     publisher=software.publisher,
                     version=software.version,
-                )
-            )
-        if source.agent is not None:
-            db.add(
-                AgentRecord(
-                    computer_id=target.id,
-                    glpi_id=source.agent.glpi_id,
-                    last_contact=source.agent.last_contact,
-                    version=source.agent.version,
-                    itemtype=source.agent.itemtype,
                 )
             )
     db.flush()
@@ -921,15 +877,10 @@ def connection_report(settings: Settings, http: httpx.Client | None = None) -> d
         from app.demo.loader import load_catalog
 
         current = load_catalog().current
-        return {
-            "mode": "demo",
-            "ordinateurs": len(current),
-            "agents": sum(1 for computer in current if computer.agent is not None),
-        }
+        return {"mode": "demo", "ordinateurs": len(current)}
     with GlpiClient(settings, http=http) as client:
         computers = client.list_computers()
-        agents = [row for row in client.list_agents() if row.get("itemtype") in (None, "", "Computer")]
-    return {"mode": "glpi", "ordinateurs": len(computers), "agents": len(agents)}
+    return {"mode": "glpi", "ordinateurs": len(computers)}
 
 
 def glpi_computer_url(settings: Settings, glpi_id: int) -> str:

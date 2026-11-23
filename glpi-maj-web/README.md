@@ -1,6 +1,6 @@
 # Suivi des mises à jour du parc GLPI
 
-Application interne qui lit les ordinateurs, les logiciels et les agents dans GLPI, les compare à des sources publiques (winget, GitHub Releases, MSRC et CERT-FR) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
+Application interne qui lit, pour chaque poste GLPI, son nom, son service, son système et ses logiciels, les compare à des sources publiques (winget, GitHub Releases, MSRC et CERT-FR) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
 
 L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF. Le bouton « Lancer une vérification » lit le parc en arrière-plan. La première collecte interroge les ordinateurs, puis seulement les versions qu'ils installent. La suivante ne relit que les postes dont la date GLPI a changé et reprend les autres. Le pourcentage suit le volume annoncé par GLPI. Les pages se mettent à jour quand un poste ou un logiciel apparaît. « Arrêter la vérification » interrompt la lecture. Les dix dernières vérifications sont conservées (réglable dans Paramètres). À 100 %, le tableau de bord se recharge.
 
@@ -24,7 +24,7 @@ Dans GLPI, compte administrateur :
    - le limiter aux adresses `127.0.0.1` et `::1` (l'application l'appelle depuis le serveur lui-même) ;
    - régénérer l'App-Token et le copier dans `GLPI_APP_TOKEN`.
 3. Créer un compte `api-maj`.
-   - profil **Observer** sur l'entité racine, récursif, avec lecture des ordinateurs, des logiciels et des agents ;
+   - profil **Observer** sur l'entité racine, récursif, avec lecture des ordinateurs, de leur système et de leurs logiciels ;
    - générer un User-Token (jeton distant) et le copier dans `GLPI_USER_TOKEN`.
 
 Tant que ces deux jetons sont vides, `DEMO_MODE=auto` affiche un parc d'exemple de 20 postes. Renseigner les jetons, puis relancer le service, pour interroger le vrai GLPI.
@@ -46,18 +46,13 @@ curl -sS 'http://127.0.0.1/apirest.php/Computer?range=0-1&expand_dropdowns=true'
   -H "Session-Token: ${SESSION}" \
   -H 'User-Agent: glpi-maj-web/1.0'
 
-curl -sS 'http://127.0.0.1/apirest.php/Agent?range=0-1' \
-  -H "App-Token: VOTRE_APP_TOKEN" \
-  -H "Session-Token: ${SESSION}" \
-  -H 'User-Agent: glpi-maj-web/1.0'
-
 curl -sS 'http://127.0.0.1/apirest.php/killSession' \
   -H "App-Token: VOTRE_APP_TOKEN" \
   -H "Session-Token: ${SESSION}" \
   -H 'User-Agent: glpi-maj-web/1.0'
 ```
 
-`initSession` doit renvoyer un `session_token`. Les deux lectures doivent renvoyer un tableau JSON. `killSession` doit répondre sans erreur.
+`initSession` doit renvoyer un `session_token`. La lecture des ordinateurs doit renvoyer un tableau JSON. `killSession` doit répondre sans erreur.
 
 ## Installation
 
@@ -140,7 +135,7 @@ Laissez le champ vide pour conserver l'accès anonyme. Redémarrez le service ap
 - **ERROR_NOT_ALLOWED_IP** : le client API `glpi-maj-web` n'autorise pas l'adresse qui l'appelle. N'autorisez que `127.0.0.1` et `::1`, et n'interrogez pas GLPI depuis un autre poste.
 - **ERROR_APP_TOKEN_PARAMETERS_MISSING** : `GLPI_APP_TOKEN` est vide ou ne correspond pas au client API. Régénérez le jeton et recopiez-le.
 - **ERROR_GLPI_LOGIN_USER_TOKEN** : `GLPI_USER_TOKEN` est refusé, ou la connexion par jeton externe n'est pas activée. Vérifiez aussi que le compte `api-maj` n'est pas désactivé.
-- **ERROR_RIGHT_MISSING** : le profil ouvert par la session API ne peut pas lire les ordinateurs ou les agents. Sur `api-maj`, le profil par défaut doit être Super-Admin, récursif, sur l'entité racine.
+- **ERROR_RIGHT_MISSING** : le profil ouvert par la session API ne peut pas lire les ordinateurs, leur système ou leurs logiciels. Sur `api-maj`, le profil par défaut doit être Super-Admin, récursif, sur l'entité racine.
 - **Port occupé** : `ss -tlnp` montre qui écoute sur 8001 ou 8090. L'installation s'arrête avec le numéro du port. Ne libérez pas 8080 pour cette application.
 - **Source injoignable** : la page Sources et la fin de `install.sh` nomment la source. Vérifiez le pare-feu sortant et, s'il y a un proxy, `HTTPS_PROXY`. La dernière réponse connue reste utilisée.
 - **Droits** : le rôle `lecture` consulte, `technicien` lance une vérification et met à jour le suivi, `admin` modifie les paramètres et les comptes. Un compte technique GLPI doit rester en Observer récursif : un profil sans lecture des logiciels produit des postes « sans logiciel ».
@@ -160,7 +155,7 @@ Laissez le champ vide pour conserver l'accès anonyme. Redémarrez le service ap
 - **Limites d'API.** CERT-FR : les deux index une fois par jour, puis un seul bulletin par logiciel, le plus récent. S'il cite plusieurs CVE, seule la plus récente est conservée. Sa note CVSS est lue sur la fiche CVE (une requête) et affichée en Critique, Important, Moyenne ou Faible. Une alerte CERT-FR reste Critique. MSRC : une requête pour le document entier. GitHub Releases : au plus une requête par produit et par jour UTC, avec ETag. La clé GitHub reste vide par défaut.
 - **Règles fixes.** Enregistrées dans `app_settings` sous la clé `fixed_rules`, éditables dans l'interface, jamais réécrites par une collecte. Le référentiel de secours est chargé au premier démarrage et conservé comme plancher : pour Reader, Java 8 et Photoshop, la comparaison reste stricte (`gt`) tant que la version publiée ne dépasse pas ce plancher, puis devient `ge` sur la version obtenue.
 - **Suivi des actions.** La clé stable est `glpi_id:kind:slug`. L'état, le technicien, la date et le commentaire survivent aux vérifications suivantes.
-- **« Tout est à jour ? ».** Oui seulement en l'absence d'action Critique ou Importante. L'option `include_low_in_uptodate` inclut aussi les actions Faibles. Les autres actions (agent silencieux, inventaire ancien, poste sans logiciel, serveur Debian) ne bloquent pas cet indicateur. Un serveur Linux sans logiciel ne reçoit que l'action Debian. Une CVE sous le seuil Important reste citée, avec la sévérité Faible. La priorité du poste est la sévérité la plus haute.
+- **« Tout est à jour ? ».** Oui seulement en l'absence d'action Critique ou Importante. L'option `include_low_in_uptodate` inclut aussi les actions Faibles. Les autres actions (poste sans logiciel, serveur Debian) ne bloquent pas cet indicateur. Un serveur Linux sans logiciel ne reçoit que l'action Debian. Une CVE sous le seuil Important reste citée, avec la sévérité Faible. La priorité du poste est la sévérité la plus haute.
 - **Courriel.** `smtplib` de la bibliothèque standard, SMTP désactivé par défaut. Le premier passage mémorise les alertes CERT-FR et l'identifiant MSRC déjà connus, sans rien envoyer. Ensuite, un message part si une nouvelle alerte CERT-FR ou un nouveau Patch Tuesday concerne des postes du parc.
 - **Interface.** htmx 2.0.4 et Chart.js 4.4.6 sont copiés dans `app/web/static/vendor/`. Le PDF A4 paysage utilise DejaVu Sans, copié dans le dépôt, en plus du paquet `fonts-dejavu` installé sur le serveur.
 - **Service.** Uvicorn est lancé par `sh -c` pour développer `$APP_PORT` lu dans `EnvironmentFile`. `PYTHONDONTWRITEBYTECODE=1` évite d'écrire des fichiers `.pyc` sous `ProtectSystem=strict`. Le fuseau du service est `Europe/Paris`.

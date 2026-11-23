@@ -12,14 +12,6 @@
         {% endfor %}
       </select>
     </label>
-    <label>Lieu
-      <select name="lieu">
-        <option value="">Tous</option>
-        {% for item in view.lieux %}
-        <option value="{{ item }}" {% if params.lieu == item %}selected{% endif %}>{{ item }}</option>
-        {% endfor %}
-      </select>
-    </label>
     <label>Priorité
       <select name="priorite">
         <option value="">Toutes</option>

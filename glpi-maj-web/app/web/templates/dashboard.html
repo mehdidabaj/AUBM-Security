@@ -40,23 +40,11 @@
   </article>
 </section>
 
-<section class="split">
-  <article class="card">
-    <h2>Depuis la vérification précédente</h2>
-    <p>{{ (data.resume.nouvelles_actions or [])|length }} nouvelle(s) action(s).</p>
-    <p>{{ (data.resume.postes_corriges or [])|length }} poste(s) corrigé(s) encore présent(s).</p>
-    <p>{{ (data.resume.postes_ajoutes or [])|length }} poste(s) ajouté(s), {{ (data.resume.postes_retires or [])|length }} retiré(s).</p>
-  </article>
-  <article class="card">
-    <h2>Agents silencieux</h2>
-    {% if data.silencieux %}
-    <ul>
-      {% for nom in data.silencieux %}<li>{{ nom }}</li>{% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">Aucun agent silencieux au-delà du délai.</p>
-    {% endif %}
-  </article>
+<section class="card">
+  <h2>Depuis la vérification précédente</h2>
+  <p>{{ (data.resume.nouvelles_actions or [])|length }} nouvelle(s) action(s).</p>
+  <p>{{ (data.resume.postes_corriges or [])|length }} poste(s) corrigé(s) encore présent(s).</p>
+  <p>{{ (data.resume.postes_ajoutes or [])|length }} poste(s) ajouté(s), {{ (data.resume.postes_retires or [])|length }} retiré(s).</p>
 </section>
 
 <section class="card">

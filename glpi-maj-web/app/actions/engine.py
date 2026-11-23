@@ -243,7 +243,7 @@ def _other_actions(run, computer, window, moment) -> list[ComputedAction]:
     limit = moment - timedelta(days=window)
     inventory_recent = computer.last_inventory_at is not None and computer.last_inventory_at >= limit
     agent = computer.agent
-    agent_stale = agent is None or agent.last_contact is None or agent.last_contact < limit
+    agent_stale = agent is not None and (agent.last_contact is None or agent.last_contact < limit)
     inventory_stale = computer.last_inventory_at is None or computer.last_inventory_at < limit
     if agent_stale and not inventory_recent:
         actions.append(
@@ -414,4 +414,8 @@ def _linux_server(computer) -> bool:
     kind = computer.computer_type.lower()
     name = computer.name.lower()
     linux = any(token in os_name for token in ("linux", "debian", "ubuntu"))
-    return linux and ("serveur" in kind or name.startswith("srv"))
+    if not linux:
+        return False
+    if not kind:
+        return True
+    return "serveur" in kind or name.startswith("srv")

@@ -142,7 +142,10 @@ def test_collecte_paginee_et_session(app):
     assert first.os_build == "26300.9974"
     assert first.software[0].name == "Google Chrome"
     assert first.software[0].version == "157.0.8103.50"
-    assert first.agent is not None and first.agent.version == "1.21"
+    assert first.agent is None
+    assert first.location == ""
+    assert first.computer_type == ""
+    assert "Agent" not in {kind for _computer_id, kind in sink.get("details", [])}
     assert computers[1].os_name == "Windows 10"
     assert computers[1].os_build == "19045.6456"
     assert computers[1].group_name == "Ressources humaines"
@@ -251,7 +254,7 @@ def test_collecte_rapporte_la_progression(app):
     with GlpiClient(app.state.settings, http=http, page_size=2) as client:
         client.collect(on_progress=lambda *args: seen.append(args))
     assert any(item[2] == "ordinateurs" and item[3] == 3 and item[4] == 3 for item in seen)
-    assert any(item[2] == "agents" for item in seen)
+    assert all(item[2] != "agents" for item in seen)
 
 
 def test_poste_visible_avant_la_fin_de_la_collecte(app):
@@ -392,7 +395,7 @@ def test_verification_glpi_simulee_historisee(app):
             app.state.settings,
             http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, {}))),
         )
-        assert counts == {"mode": "glpi", "ordinateurs": 3, "agents": 2}
+        assert counts == {"mode": "glpi", "ordinateurs": 3}
     finally:
         db.close()
 
@@ -451,7 +454,8 @@ def test_deuxieme_collecte_ne_relit_que_les_postes_modifies(app):
         by_id = {computer.glpi_id: computer for computer in second.computers}
         assert by_id[1].software[0].name == "Google Chrome"
         assert by_id[1].os_build == "26300.9974"
-        assert by_id[1].agent is not None and by_id[1].agent.version == "1.21"
+        assert by_id[1].agent is None
+        assert by_id[1].location == ""
         assert by_id[2].software[0].name == "Microsoft Office 2016"
         by_id[1].os_name = "3"
         by_id[1].os_version = "3"
@@ -476,7 +480,6 @@ def test_connexion_demo_compte_les_postes(app):
     counts = connection_report(app.state.settings)
     assert counts["mode"] == "demo"
     assert counts["ordinateurs"] == 20
-    assert counts["agents"] == 20
 
 
 def test_lancement_reserve_au_technicien(client, app):

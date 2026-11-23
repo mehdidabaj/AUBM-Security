@@ -10,7 +10,7 @@ import httpx
 from app.config import Settings
 from app.glpi.errors import MESSAGES, GlpiError
 from app.glpi.normalize import extract_build, label, linked_id, normalize_name, parse_glpi_datetime
-from app.glpi.types import AgentItem, ComputerItem, SoftwareItem
+from app.glpi.types import ComputerItem, SoftwareItem
 
 USER_AGENT = "glpi-maj-web/1.0"
 PAGE_SIZE = 500
@@ -101,14 +101,11 @@ class GlpiClient:
     def list_software_links(self, on_page=None) -> list[dict]:
         return self._paginate("Item_SoftwareVersion", {"expand_dropdowns": "false"}, on_page=on_page)
 
-    def list_agents(self, on_page=None) -> list[dict]:
-        return self._paginate("Agent", on_page=on_page)
-
     def collect(self, on_progress=None, known: dict[int, datetime | None] | None = None) -> list[ComputerItem]:
-        """Lit les ordinateurs, puis seulement les versions des postes nouveaux ou modifiés.
+        """Lit le nom, le service, le système et les logiciels des postes nouveaux ou modifiés.
 
         known associe un identifiant GLPI à la date déjà enregistrée. Une date identique
-        ou plus ancienne évite de relire le système, les logiciels et l'agent.
+        ou plus ancienne évite de relire le système et les logiciels.
         """
 
         def report(index: int, label: str, read: int, total: int | None, chunk: list | None) -> None:
@@ -122,7 +119,6 @@ class GlpiClient:
         )
         os_rows: list[dict] = []
         link_rows: list[dict] = []
-        agent_rows: list[dict] = []
         unchanged, pending = _split_changes(computers, known)
         total_computers = len(computers)
         if unchanged:
@@ -145,9 +141,6 @@ class GlpiClient:
             os_rows.extend(systems)
             report(1, "systèmes", seen, total_computers, systems)
             link_rows.extend(self._subitems(computer_id, "Item_SoftwareVersion"))
-            agents = self._subitems(computer_id, "Agent")
-            agent_rows.extend(agents)
-            report(1, "agents", seen, total_computers, agents)
             report(1, "postes", seen, total_computers, [])
 
         version_ids = _unique_ids(row.get("softwareversions_id") for row in link_rows)
@@ -163,7 +156,7 @@ class GlpiClient:
             on_page=lambda read, total, chunk: report(3, "logiciels", read, total, chunk),
         )
         self._report_links(link_rows, report)
-        return assemble(computers, os_rows, softwares, versions, link_rows, agent_rows)
+        return assemble(computers, os_rows, softwares, versions, link_rows)
 
     def _report_links(self, link_rows: list[dict], report) -> None:
         if not link_rows:
@@ -380,7 +373,6 @@ def assemble(
     softwares: list[dict],
     versions: list[dict],
     links: list[dict],
-    agents: list[dict],
 ) -> list[ComputerItem]:
     software_by_id = {int(row["id"]): row for row in softwares if "id" in row}
     version_by_id = {int(row["id"]): row for row in versions if "id" in row}
@@ -400,14 +392,6 @@ def assemble(
         if item_id is None:
             continue
         links_by_item[item_id].append(row.get("softwareversions_id"))
-    agent_by_item: dict[int, dict] = {}
-    for row in agents:
-        if row.get("itemtype") not in (None, "", "Computer"):
-            continue
-        item_id = linked_id(row.get("items_id"))
-        if item_id is None:
-            continue
-        agent_by_item[item_id] = row
 
     collected: list[ComputerItem] = []
     for raw in computers:
@@ -418,28 +402,19 @@ def assemble(
             item = _software_item(version_ref, version_by_id, software_by_id)
             if item and item.name:
                 software.append(item)
-        agent_raw = agent_by_item.get(glpi_id)
-        agent = None
-        if agent_raw is not None:
-            agent = AgentItem(
-                glpi_id=int(agent_raw["id"]) if agent_raw.get("id") is not None else None,
-                last_contact=parse_glpi_datetime(agent_raw.get("last_contact")),
-                version=normalize_name(agent_raw.get("version")),
-                itemtype=normalize_name(agent_raw.get("itemtype") or "Agent") or "Agent",
-            )
         collected.append(
             ComputerItem(
                 glpi_id=glpi_id,
                 name=normalize_name(raw.get("name")),
                 group_name=label(raw.get("groups_id")),
-                location=label(raw.get("locations_id")),
-                computer_type=label(raw.get("computertypes_id")),
+                location="",
+                computer_type="",
                 os_name=label(system.get("operatingsystems_id")),
                 os_version=label(system.get("operatingsystemversions_id")),
                 os_build=extract_build(system.get("operatingsystemkernelversions_id")),
                 last_inventory_at=parse_glpi_datetime(raw.get("date_mod")),
                 software=software,
-                agent=agent,
+                agent=None,
             )
         )
     return collected

@@ -48,9 +48,6 @@ def build_model(db: Session, settings: Settings) -> dict:
                 {
                     "nom": computer.name,
                     "service": computer.group_name or "—",
-                    "lieu": computer.location or "—",
-                    "agent_contact": paris(computer.agent.last_contact) if computer.agent else "—",
-                    "agent_version": computer.agent.version if computer.agent and computer.agent.version else "—",
                     "inventaire": paris(computer.last_inventory_at),
                     "a_jour": "Oui" if is_up_to_date(actions, count_low) else "Non",
                     "priorite": priority,
@@ -74,8 +71,6 @@ def build_model(db: Session, settings: Settings) -> dict:
         critiques = [item["nom"] for item in postes if item["priorite"] == "critique"]
         if critiques:
             vigilance.append("Postes critiques : " + ", ".join(critiques))
-        if board.get("silencieux"):
-            vigilance.append("Agents silencieux : " + ", ".join(board["silencieux"]))
     for source in source_overview(db):
         if source["etat"] != "ok":
             vigilance.append(f"{source['libelle']} : {source['etat']}")

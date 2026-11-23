@@ -23,8 +23,12 @@ def test_classeur_formules_liens_et_couleurs(client, admin):
     assert any(cell.hyperlink is not None and "computer.form.php?id=" in cell.hyperlink.target for row in pc.iter_rows(min_row=2) for cell in row)
     plan = book["Plan d'action par PC"]
     assert str(plan["A2"].value).startswith("='PC – actions à faire'!A2")
-    assert "TEXTJOIN" in str(plan["L2"].value)
-    assert "CHAR(10)" in str(plan["L2"].value)
+    headers = [cell.value for cell in plan[1]]
+    todo = plan.cell(2, headers.index("À faire") + 1).value
+    assert "TEXTJOIN" in str(todo)
+    assert "CHAR(10)" in str(todo)
+    assert "Lieu" not in headers
+    assert "Version agent" not in headers
     validations = list(plan.data_validations.dataValidation)
     assert validations
     assert "Listes" in validations[0].formula1
