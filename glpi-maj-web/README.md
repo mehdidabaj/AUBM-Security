@@ -1,6 +1,6 @@
 # Suivi des mises à jour du parc GLPI
 
-Application interne qui lit les ordinateurs, les logiciels et les agents dans GLPI, les compare à des sources publiques (winget, GitHub Releases, endoflife.date, MSRC, NVD, CISA KEV, CERT-FR et les avis des éditeurs) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
+Application interne qui lit les ordinateurs, les logiciels et les agents dans GLPI, les compare à des sources publiques (winget, GitHub Releases, MSRC et CERT-FR) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
 
 L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF. Le bouton « Lancer une vérification » lit le parc en arrière-plan. La première collecte interroge les ordinateurs, puis seulement les versions qu'ils installent. La suivante ne relit que les postes dont la date GLPI a changé et reprend les autres. Le pourcentage suit le volume annoncé par GLPI. Les pages se mettent à jour quand un poste ou un logiciel apparaît. « Arrêter la vérification » interrompt la lecture. Les dix dernières vérifications sont conservées (réglable dans Paramètres). À 100 %, le tableau de bord se recharge.
 
@@ -127,14 +127,13 @@ sudo bash /opt/glpi-maj-web/deploy/uninstall.sh
 
 Le service, le timer et le VirtualHost de cette application sont retirés. GLPI et le port 8080 ne sont pas modifiés. La base, les sauvegardes et `config.env` restent en place. Ajoutez `--purge` pour les supprimer aussi.
 
-## Clés NVD et GitHub, plus tard
+## Clé GitHub, plus tard
 
-Les collectes fonctionnent sans clé. Une clé augmente seulement les quotas.
+Les collectes fonctionnent sans clé. Une clé augmente seulement le quota GitHub.
 
-- **NVD** : demander une clé sur <https://nvd.nist.gov/developers/request-an-api-key>, puis la coller dans `NVD_API_KEY`. L'intervalle passe alors de 6,5 s à 0,6 s.
 - **GitHub** : créer un jeton classique sur <https://github.com/settings/tokens> (aucun droit sur les dépôts privés n'est nécessaire pour les dépôts publics), puis le coller dans `GITHUB_TOKEN`.
 
-Laissez les deux champs vides pour conserver l'accès anonyme. Redémarrez le service après modification.
+Laissez le champ vide pour conserver l'accès anonyme. Redémarrez le service après modification.
 
 ## Dépannage
 
@@ -157,11 +156,12 @@ Laissez les deux champs vides pour conserver l'accès anonyme. Redémarrez le se
 - **Mode démo.** `DEMO_MODE=auto` est actif lorsque `GLPI_APP_TOKEN` et `GLPI_USER_TOKEN` sont vides. Vingt postes et une vérification précédente sont enregistrés, pour que le comparatif ait des données.
 - **Versions.** Comparateur maison par tuples numériques : builds Windows (`26300.9974`), Java (`8u511` et `1.8.0_511`), versions à quatre composants. Les formats non reconnus, dont « voir site », sont ignorés pour l'action de version.
 - **Manifests winget.** Lecture de la clé `PackageVersion` sans PyYAML. Clone superficiel `git clone --depth 1 --filter=blob:none --sparse`, puis sparse-checkout du dossier `manifests/{lettre}/{éditeur}` et filtre sur `PackageIdentifier`. Les flux RSS et Atom sont lus avec `xml.etree`, sans `feedparser`.
-- **Limites d'API.** NVD : au plus une requête toutes les 6,5 s (0,6 s si `NVD_API_KEY` est renseigné). Reprise après 10 s, 20 s puis 40 s sur les réponses 403, 429 et 503. Chaque produit suivi n'interroge que les CVE modifiées dans les 120 derniers jours (une page de 50, puis le delta depuis la lecture précédente). Les CVE plus anciennes sont retirées du cache. CISA KEV : un seul fichier par jour, dont seules les entrées ajoutées dans les 120 derniers jours sont conservées. CERT-FR : les deux index une fois par jour, puis les avis et les alertes des 120 derniers jours dont le titre cite un produit du parc (80 avis et 20 alertes au plus, les plus récents). MSRC : une requête pour le document entier. GitHub Releases : au plus une requête par produit et par jour UTC, avec ETag. Les deux clés restent vides par défaut.
+- **Sources retenues.** winget, GitHub Releases, MSRC et CERT-FR. Les fins de support (Windows 10 et anciennes versions d'Office) viennent du référentiel local, pas d'endoflife.date. NVD, CISA KEV et les flux d'éditeurs ne sont plus interrogés.
+- **Limites d'API.** CERT-FR : les deux index une fois par jour, puis les avis et les alertes des 120 derniers jours dont le titre cite un produit du parc (80 avis et 20 alertes au plus, les plus récents). MSRC : une requête pour le document entier. GitHub Releases : au plus une requête par produit et par jour UTC, avec ETag. La clé GitHub reste vide par défaut.
 - **Règles fixes.** Enregistrées dans `app_settings` sous la clé `fixed_rules`, éditables dans l'interface, jamais réécrites par une collecte. Le référentiel de secours est chargé au premier démarrage et conservé comme plancher : pour Reader, Java 8 et Photoshop, la comparaison reste stricte (`gt`) tant que la version publiée ne dépasse pas ce plancher, puis devient `ge` sur la version obtenue.
 - **Suivi des actions.** La clé stable est `glpi_id:kind:slug`. L'état, le technicien, la date et le commentaire survivent aux vérifications suivantes.
 - **« Tout est à jour ? ».** Oui seulement en l'absence d'action Critique ou Importante. L'option `include_low_in_uptodate` inclut aussi les actions Faibles. Les autres actions (agent silencieux, inventaire ancien, poste sans logiciel, serveur Debian) ne bloquent pas cet indicateur. Un serveur Linux sans logiciel ne reçoit que l'action Debian. Une CVE sous le seuil Important reste citée, avec la sévérité Faible. La priorité du poste est la sévérité la plus haute.
-- **Courriel.** `smtplib` de la bibliothèque standard, SMTP désactivé par défaut. Le premier passage mémorise les CVE KEV, les alertes CERT-FR et l'identifiant MSRC déjà connus, sans rien envoyer. Ensuite, un message part si une nouvelle CVE KEV, une nouvelle alerte CERT-FR ou un nouveau Patch Tuesday concerne des postes du parc.
+- **Courriel.** `smtplib` de la bibliothèque standard, SMTP désactivé par défaut. Le premier passage mémorise les alertes CERT-FR et l'identifiant MSRC déjà connus, sans rien envoyer. Ensuite, un message part si une nouvelle alerte CERT-FR ou un nouveau Patch Tuesday concerne des postes du parc.
 - **Interface.** htmx 2.0.4 et Chart.js 4.4.6 sont copiés dans `app/web/static/vendor/`. Le PDF A4 paysage utilise DejaVu Sans, copié dans le dépôt, en plus du paquet `fonts-dejavu` installé sur le serveur.
 - **Service.** Uvicorn est lancé par `sh -c` pour développer `$APP_PORT` lu dans `EnvironmentFile`. `PYTHONDONTWRITEBYTECODE=1` évite d'écrire des fichiers `.pyc` sous `ProtectSystem=strict`. Le fuseau du service est `Europe/Paris`.
 - **Mise à jour du code.** Le clone Git est noté dans `/etc/glpi-maj-web/repo_root` et le dossier de l'application dans `app_dir`. `update.sh` fait `git pull` puis `rsync`. `uninstall.sh` laisse `/var/lib/glpi-maj-web` et les sauvegardes, sauf avec `--purge`.

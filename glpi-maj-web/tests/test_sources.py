@@ -157,17 +157,6 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
     db = app.state.SessionLocal()
     try:
         load_fallback_if_needed(db)
-        put_cache(
-            db,
-            "nvd",
-            "chrome",
-            {
-                "cves": [{"id": "CVE-2010-0001", "cvss": 9.0, "modified": "2010-01-01T00:00:00", "url": "https://nvd.nist.gov/vuln/detail/CVE-2010-0001"}],
-                "last_mod_end": "2026-11-17T03:00:00",
-            },
-            origin="live",
-            now=datetime(2026, 11, 17, 3, 0, 0),
-        )
         assert payload_of(get_cache(db, "fallback", "chrome"))["version"] == "157.0.8103.50"
         assert payload_of(get_cache(db, "fallback", "java8"))["mode"] == "gt"
         assert payload_of(get_cache(db, "fallback", "office-2016"))["eol"] is True
@@ -181,16 +170,15 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
         )
         first = update_sources(db, app.state.settings, now=datetime(2026, 11, 18, 3, 0, 0), **common)
         assert first.status == "success", first.message
-        assert clock.sleeps == [0.6]
+        assert clock.sleeps == []
         assert version_target(db, "chrome")["version"] == "158.0.0.0"
         assert version_target(db, "chrome")["source"] == "winget"
         assert payload_of(get_cache(db, "github", "notepadpp"))["version"] == "8.9.7"
-        chrome_cves = {item["id"]: item for item in payload_of(get_cache(db, "nvd", "chrome"))["cves"]}
-        assert chrome_cves["CVE-2026-1000"]["cvss"] == 9.1
-        assert "CVE-2010-0001" not in chrome_cves
-        kev_cves = payload_of(get_cache(db, "kev", "catalog"))["cves"]
-        assert "CVE-2026-1000" in kev_cves
-        assert "CVE-2014-0160" not in kev_cves
+        assert not any(
+            host in url
+            for url in seen
+            for host in ("nvd.nist.gov", "known_exploited", "endoflife.date", "googleblog.com", "mozilla.org")
+        )
         certfr = payload_of(get_cache(db, "certfr", "catalog"))["cves"]
         assert certfr["CVE-2026-2857"]["products"] == ["chrome"]
         assert certfr["CVE-2026-2857"]["alert"] is False
@@ -266,11 +254,7 @@ def test_msrc_et_endoflife_pour_les_produits_presents(app):
     try:
         from app.settings_store import set_setting
 
-        set_setting(
-            db,
-            "sources_enabled",
-            {"winget": False, "github": False, "endoflife": True, "msrc": True, "nvd": True, "kev": True, "feeds": False},
-        )
+        set_setting(db, "sources_enabled", {"winget": False, "github": False, "msrc": True, "certfr": False})
         http = httpx.Client(transport=httpx.MockTransport(handler))
         run = update_sources(
             db,
@@ -283,9 +267,7 @@ def test_msrc_et_endoflife_pour_les_produits_presents(app):
         assert run.status == "success", run.message
         assert payload_of(get_cache(db, "msrc", "windows-26h2"))["version"] == "26300.9974"
         assert payload_of(get_cache(db, "msrc", "m365"))["version"] == "16.0.20527.20196"
-        assert payload_of(get_cache(db, "endoflife", "windows-10"))["eol"] is True
-        assert payload_of(get_cache(db, "endoflife", "windows-11"))["eol"] is False
-        assert payload_of(get_cache(db, "endoflife", "office-2016"))["eol"] is True
+        assert get_cache(db, "endoflife", "windows-10") is None
         assert get_cache(db, "nvd", "chrome") is None
     finally:
         db.close()
@@ -315,6 +297,10 @@ def test_referentiel_de_secours_si_aucune_collecte(app):
         load_fallback_if_needed(db)
         states = {row["source"]: row["etat"] for row in source_overview(db, utcnow())}
         assert states["winget"] == "secours"
-        assert states["nvd"] == "secours"
+        assert states["certfr"] == "secours"
+        assert "nvd" not in states
+        assert "endoflife" not in states
+        assert "kev" not in states
+        assert "feeds" not in states
     finally:
         db.close()

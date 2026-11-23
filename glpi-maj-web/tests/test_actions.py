@@ -62,30 +62,26 @@ def test_regles_fixes_seuils_et_suivi(app):
         load_fallback_if_needed(db)
         put_cache(
             db,
-            "nvd",
-            "chrome",
-            {"cves": [{"id": "CVE-2026-1000", "cvss": 9.1, "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-1000", "summary": "Chrome"}]},
-            origin="live",
-        )
-        put_cache(
-            db,
-            "kev",
+            "certfr",
             "catalog",
-            {"cves": {"CVE-2026-1000": {"id": "CVE-2026-1000", "vendor": "Google", "product": "Chrome", "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"}}},
-            origin="live",
-        )
-        put_cache(
-            db,
-            "nvd",
-            "vlc",
-            {"cves": [{"id": "CVE-2026-3000", "cvss": 7.4, "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-3000"}]},
-            origin="live",
-        )
-        put_cache(
-            db,
-            "nvd",
-            "firefox",
-            {"cves": [{"id": "CVE-2026-4000", "cvss": 6.5, "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-4000"}]},
+            {
+                "cves": {
+                    "CVE-2026-1000": {
+                        "id": "CVE-2026-1000",
+                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
+                        "summary": "Chrome",
+                        "alert": True,
+                        "products": ["chrome"],
+                    },
+                    "CVE-2026-4000": {
+                        "id": "CVE-2026-4000",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0009/",
+                        "summary": "Firefox",
+                        "alert": False,
+                        "products": ["firefox"],
+                    },
+                }
+            },
             origin="live",
         )
         now = utcnow()
@@ -168,7 +164,7 @@ def test_regles_fixes_seuils_et_suivi(app):
         chrome = _kinds(db, 4)["version:chrome"]
         assert chrome.severity == "critique"
         assert "CVE-2026-1000" in chrome.cves_json
-        assert "cisa.gov" in chrome.source_url
+        assert "cert.cyber.gouv.fr" in chrome.source_url
         assert _kinds(db, 4)["windows_upgrade:windows-25h2"].severity == "important"
         assert _kinds(db, 4)["windows_update:windows-25h2"].severity == "critique"
 
@@ -178,7 +174,7 @@ def test_regles_fixes_seuils_et_suivi(app):
         assert "version:java8" not in _kinds(db, 6)
         assert _kinds(db, 7)["advanced_ip:advanced-ip"].severity == "important"
         assert _kinds(db, 8)["version:notepadpp"].installed_version == "8.7.1"
-        assert _kinds(db, 9)["version:vlc"].severity == "important"
+        assert _kinds(db, 9)["version:vlc"].severity == "faible"
         assert _kinds(db, 10)["version:firefox"].severity == "faible"
         assert json.loads(_kinds(db, 10)["version:firefox"].cves_json)[0]["id"] == "CVE-2026-4000"
         assert _kinds(db, 11)["sans_logiciel:"].title == "Poste sans logiciel remonté"
@@ -187,7 +183,7 @@ def test_regles_fixes_seuils_et_suivi(app):
         assert _kinds(db, 13)["inventaire:"].title.startswith("Forcer un inventaire")
         assert _kinds(db, 14)["agent_silencieux:"].severity == "autre"
         assert priority_of(list(_kinds(db, 4).values())) == "critique"
-        assert is_up_to_date(list(_kinds(db, 9).values()), False) is False
+        assert is_up_to_date(list(_kinds(db, 9).values()), False) is True
         assert is_up_to_date(list(_kinds(db, 10).values()), False) is True
         assert is_up_to_date(list(_kinds(db, 10).values()), True) is False
 
@@ -224,17 +220,25 @@ def test_notification_kev_et_patch_tuesday(app):
     try:
         load_fallback_if_needed(db)
         save_check(db, [_machine(os_build="26300.9818", software=[SoftwareItem("Google Chrome", "Google", "120.0")])], "demo")
-        put_cache(db, "kev", "catalog", {"cves": {}}, origin="live")
+        put_cache(db, "certfr", "catalog", {"cves": {}}, origin="live")
         put_cache(db, "msrc", "catalog", {"release_id": "2026-Oct", "windows": {}}, origin="live")
         assert notify_changes(db, app.state.settings, send=fake) is False
         put_cache(
             db,
-            "kev",
+            "certfr",
             "catalog",
-            {"cves": {"CVE-2026-1000": {"id": "CVE-2026-1000", "vendor": "Google", "product": "Chrome", "url": "https://www.cisa.gov/kev"}}},
+            {
+                "cves": {
+                    "CVE-2026-1000": {
+                        "id": "CVE-2026-1000",
+                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
+                        "alert": True,
+                        "products": ["chrome"],
+                    }
+                }
+            },
             origin="live",
         )
-        put_cache(db, "nvd", "chrome", {"cves": [{"id": "CVE-2026-1000", "cvss": 9.8, "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-1000"}]}, origin="live")
         save_check(db, [_machine(os_build="26300.9818", software=[SoftwareItem("Google Chrome", "Google", "120.0")])], "demo")
         put_cache(db, "msrc", "catalog", {"release_id": "2026-Nov"}, origin="live")
         set_setting(db, "smtp_enabled", True)
@@ -253,13 +257,6 @@ def test_certfr_relie_les_cves_au_produit(app):
     db = app.state.SessionLocal()
     try:
         load_fallback_if_needed(db)
-        put_cache(
-            db,
-            "nvd",
-            "chrome",
-            {"cves": [{"id": "CVE-2026-2857", "cvss": 4.3, "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-2857", "summary": "Chrome"}]},
-            origin="live",
-        )
         put_cache(
             db,
             "certfr",

@@ -27,13 +27,11 @@ FEEDS = {
 SOURCE_LABELS = (
     ("winget", "Versions Windows (winget)"),
     ("github", "Logiciels libres (GitHub Releases)"),
-    ("endoflife", "Fins de support (endoflife.date)"),
     ("msrc", "Correctifs Microsoft (MSRC)"),
-    ("nvd", "Failles (NVD)"),
-    ("kev", "Failles exploitées (CISA KEV)"),
     ("certfr", "Avis de sécurité (CERT-FR)"),
-    ("feeds", "Avis des éditeurs"),
 )
+
+RETIRED_SOURCES = frozenset({"endoflife", "nvd", "kev", "feeds"})
 
 
 @dataclass(frozen=True)

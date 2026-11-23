@@ -331,70 +331,25 @@ def _severity(cves: list[dict], eol: bool, critical: float, important: float) ->
 
 
 def _cves_for(db: Session, slug: str) -> list[dict]:
-    nvd = payload_of(get_cache(db, "nvd", slug)).get("cves") or []
-    kev = payload_of(get_cache(db, "kev", "catalog")).get("cves") or {}
     certfr = payload_of(get_cache(db, "certfr", "catalog")).get("cves") or {}
+    if not isinstance(certfr, dict):
+        return []
     found = []
-    seen = set()
-    for item in nvd:
-        cve_id = item.get("id")
-        if not cve_id:
+    for cve_id, row in certfr.items():
+        if not isinstance(row, dict) or slug not in (row.get("products") or []):
             continue
-        seen.add(cve_id)
-        row = dict(item)
-        row["kev"] = cve_id in kev
-        if row["kev"]:
-            row["url"] = kev[cve_id].get("url") or row.get("url")
-        _apply_certfr(row, certfr, cve_id, slug)
-        found.append(row)
-    label = PRODUCTS[slug].label.lower() if slug in PRODUCTS else slug
-    for cve_id, row in kev.items():
-        if cve_id in seen:
-            continue
-        product = f"{row.get('vendor', '')} {row.get('product', '')}".lower()
-        if label in product or slug.replace("-", " ") in product:
-            seen.add(cve_id)
-            extra = {
+        found.append(
+            {
                 "id": cve_id,
                 "cvss": None,
-                "summary": row.get("description") or "",
+                "summary": row.get("summary") or row.get("title") or "",
                 "url": row.get("url") or "",
-                "kev": True,
+                "certfr": True,
+                "certfr_alert": bool(row.get("alert")),
+                "certfr_url": row.get("url") or "",
             }
-            _apply_certfr(extra, certfr, cve_id, slug)
-            found.append(extra)
-    if isinstance(certfr, dict):
-        for cve_id, row in certfr.items():
-            if cve_id in seen or not isinstance(row, dict):
-                continue
-            if slug not in (row.get("products") or []):
-                continue
-            found.append(
-                {
-                    "id": cve_id,
-                    "cvss": None,
-                    "summary": row.get("summary") or row.get("title") or "",
-                    "url": row.get("url") or "",
-                    "kev": cve_id in kev,
-                    "certfr": True,
-                    "certfr_alert": bool(row.get("alert")),
-                    "certfr_url": row.get("url") or "",
-                }
-            )
+        )
     return found
-
-
-def _apply_certfr(row: dict, certfr: object, cve_id: str, slug: str) -> None:
-    info = certfr.get(cve_id) if isinstance(certfr, dict) else None
-    products = info.get("products") if isinstance(info, dict) else None
-    if isinstance(info, dict) and slug in (products or []):
-        row["certfr"] = True
-        row["certfr_alert"] = bool(info.get("alert"))
-        row["certfr_url"] = info.get("url") or ""
-        return
-    row["certfr"] = False
-    row["certfr_alert"] = False
-    row["certfr_url"] = ""
 
 
 def _best_url(cves: list[dict], fallback: str) -> str:

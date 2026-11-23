@@ -111,11 +111,7 @@ def version_target(db: Session, slug: str) -> dict | None:
 
 
 def is_end_of_life(db: Session, slug: str) -> bool:
-    for source in ("endoflife", "fallback"):
-        data = payload_of(get_cache(db, source, slug))
-        if data:
-            return bool(data.get("eol"))
-    return False
+    return bool(payload_of(get_cache(db, "fallback", slug)).get("eol"))
 
 
 def source_overview(db: Session, now: datetime | None = None) -> list[dict[str, Any]]:

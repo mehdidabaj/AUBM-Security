@@ -23,6 +23,7 @@ from app.sources.catalog import (
     KEV_URL,
     MSRC_UPDATES,
     NVD_URL,
+    RETIRED_SOURCES,
     SOURCE_LABELS,
     USER_AGENT,
     Product,
@@ -64,13 +65,14 @@ def load_fallback_if_needed(db: Session, path: Path | None = None) -> int:
 
 
 def enable_new_sources(db: Session) -> None:
-    """Coche les sources ajoutées après un enregistrement des cases à cocher."""
+    """Coche les sources ajoutées et retire celles qui ne sont plus proposées."""
     stored = get_setting(db, "sources_enabled", None)
     if not isinstance(stored, dict):
         return
-    missing = {key: True for key, _label in SOURCE_LABELS if key not in stored}
-    if missing:
-        set_setting(db, "sources_enabled", {**stored, **missing})
+    kept = {key: value for key, value in stored.items() if key not in RETIRED_SOURCES}
+    missing = {key: True for key, _label in SOURCE_LABELS if key not in kept}
+    if missing or kept != stored:
+        set_setting(db, "sources_enabled", {**kept, **missing})
 
 
 def enabled_sources(db: Session) -> set[str]:
@@ -154,17 +156,13 @@ def update_sources(
 
 def probe_source(settings: Settings, key: str, http: httpx.Client | None = None) -> dict:
     """Vérifie qu'une source répond, sans lancer une collecte complète."""
-    from app.sources.catalog import CERTFR_AVIS_URL, FEEDS, KEV_URL, MSRC_UPDATES, NVD_URL
+    from app.sources.catalog import CERTFR_AVIS_URL, MSRC_UPDATES
 
     targets = {
         "winget": "https://github.com/microsoft/winget-pkgs",
         "github": "https://api.github.com/rate_limit",
-        "endoflife": "https://endoflife.date/api/windows.json",
         "msrc": MSRC_UPDATES,
-        "nvd": NVD_URL,
-        "kev": KEV_URL,
         "certfr": CERTFR_AVIS_URL,
-        "feeds": FEEDS["chrome"],
     }
     url = targets.get(key)
     if not url:
@@ -172,10 +170,8 @@ def probe_source(settings: Settings, key: str, http: httpx.Client | None = None)
     own = http is None
     client = http or make_client()
     try:
-        params = {"resultsPerPage": 1} if key == "nvd" else None
+        params = None
         headers = {"User-Agent": USER_AGENT}
-        if key == "nvd" and settings.nvd_api_key:
-            headers["apiKey"] = settings.nvd_api_key
         if key == "github" and settings.github_token:
             headers["Authorization"] = f"Bearer {settings.github_token}"
         response = client.get(url, params=params, headers=headers, timeout=20)
