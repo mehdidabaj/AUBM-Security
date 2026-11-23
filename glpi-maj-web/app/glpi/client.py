@@ -9,7 +9,7 @@ import httpx
 
 from app.config import Settings
 from app.glpi.errors import MESSAGES, GlpiError
-from app.glpi.normalize import extract_build, label, normalize_name, parse_glpi_datetime
+from app.glpi.normalize import extract_build, label, linked_id, normalize_name, parse_glpi_datetime
 from app.glpi.types import AgentItem, ComputerItem, SoftwareItem
 
 USER_AGENT = "glpi-maj-web/1.0"
@@ -184,13 +184,12 @@ class GlpiClient:
                 continue
             if row.get("itemtype") not in (None, "", "Computer"):
                 continue
-            raw = row.get("items_id")
-            if isinstance(raw, dict):
-                raw = raw.get("id")
-            if isinstance(raw, int) or (isinstance(raw, str) and raw.isdigit()):
-                if int(raw) != computer_id:
-                    continue
-            kept.append(row)
+            linked = linked_id(row.get("items_id"))
+            if linked is not None and linked != computer_id:
+                continue
+            copy = dict(row)
+            copy["items_id"] = computer_id
+            kept.append(copy)
         return kept
 
     def _resolve_os_labels(self, rows: list[dict]) -> list[dict]:
@@ -389,17 +388,26 @@ def assemble(
     for row in operating_systems:
         if row.get("itemtype") not in (None, "", "Computer"):
             continue
-        os_by_item.setdefault(int(row["items_id"]), row)
+        item_id = linked_id(row.get("items_id"))
+        if item_id is None:
+            continue
+        os_by_item.setdefault(item_id, row)
     links_by_item: dict[int, list] = defaultdict(list)
     for row in links:
         if row.get("itemtype") not in (None, "", "Computer"):
             continue
-        links_by_item[int(row["items_id"])].append(row.get("softwareversions_id"))
+        item_id = linked_id(row.get("items_id"))
+        if item_id is None:
+            continue
+        links_by_item[item_id].append(row.get("softwareversions_id"))
     agent_by_item: dict[int, dict] = {}
     for row in agents:
         if row.get("itemtype") not in (None, "", "Computer"):
             continue
-        agent_by_item[int(row["items_id"])] = row
+        item_id = linked_id(row.get("items_id"))
+        if item_id is None:
+            continue
+        agent_by_item[item_id] = row
 
     collected: list[ComputerItem] = []
     for raw in computers:

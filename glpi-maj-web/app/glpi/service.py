@@ -14,7 +14,7 @@ from app.actions.rules import SEVERITY_RANK
 from app.config import Settings
 from app.glpi.client import GlpiClient, _software_item, assemble
 from app.glpi.errors import GlpiError
-from app.glpi.normalize import extract_build, label, normalize_name, parse_glpi_datetime
+from app.glpi.normalize import extract_build, label, linked_id, normalize_name, parse_glpi_datetime
 from app.glpi.types import AgentItem, ComputerItem
 from app.models.actions import ComputedAction
 from app.models.inventory import AgentRecord, CheckRun, ComputerRecord, SoftwareInstall
@@ -393,10 +393,10 @@ def _appliquer_systemes(db: Session, run: CheckRun, live: _LiveCatalog, chunk: l
     for row in chunk:
         if row.get("itemtype") not in (None, "", "Computer"):
             continue
-        try:
-            by_item[int(row["items_id"])] = row
-        except (KeyError, TypeError, ValueError):
+        glpi_id = linked_id(row.get("items_id"))
+        if glpi_id is None:
             continue
+        by_item[glpi_id] = row
     found = _records(db, run, live, set(by_item))
     for glpi_id, system in by_item.items():
         record = found.get(glpi_id)
@@ -413,9 +413,8 @@ def _appliquer_installations(db: Session, run: CheckRun, live: _LiveCatalog, chu
     for row in chunk:
         if row.get("itemtype") not in (None, "", "Computer"):
             continue
-        try:
-            glpi_id = int(row["items_id"])
-        except (KeyError, TypeError, ValueError):
+        glpi_id = linked_id(row.get("items_id"))
+        if glpi_id is None:
             continue
         item = _software_item(row.get("softwareversions_id"), live.version_by_id, live.software_by_id)
         if item is None or not item.name:
@@ -443,9 +442,8 @@ def _appliquer_agents(db: Session, run: CheckRun, live: _LiveCatalog, chunk: lis
     for row in chunk:
         if row.get("itemtype") not in (None, "", "Computer"):
             continue
-        try:
-            glpi_id = int(row["items_id"])
-        except (KeyError, TypeError, ValueError):
+        glpi_id = linked_id(row.get("items_id"))
+        if glpi_id is None:
             continue
         by_item[glpi_id] = AgentItem(
             glpi_id=int(row["id"]) if row.get("id") is not None else None,
@@ -708,9 +706,11 @@ def run_verification(
     except GlpiError as exc:
         save_check(db, [], run.origin, error=exc.message, run=run)
         raise
-    except Exception:
+    except Exception as exc:
         logger.exception("La lecture GLPI a échoué")
-        save_check(db, [], run.origin, error="La lecture GLPI a échoué.", run=run)
+        detail = normalize_name(exc)[:180]
+        message = "La lecture GLPI a échoué." if not detail else f"La lecture GLPI a échoué : {detail}"
+        save_check(db, [], run.origin, error=message, run=run)
         raise
     return finalize_run(db, run, reprise=reprise["count"] if not settings.demo_active else 0)
 

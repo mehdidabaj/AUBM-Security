@@ -25,6 +25,7 @@ def test_extraction_du_build_windows():
     assert extract_build("10.0.26300.9974") == "26300.9974"
     assert extract_build("26300.9974") == "26300.9974"
     assert extract_build("19045.6456") == "19045.6456"
+    assert extract_build({"id": 8, "name": "10.0.26300.9974"}) == "26300.9974"
     assert extract_build("") == ""
 
 
@@ -52,6 +53,11 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
             if kind == "Item_OperatingSystem":
                 sink.setdefault("os_expand", []).append(request.url.params.get("expand_dropdowns"))
             rows = [row for row in resources[kind] if int(row.get("items_id") or 0) == computer_id]
+            if kind == "Item_OperatingSystem" and request.url.params.get("expand_dropdowns") == "true":
+                rows = [
+                    dict(row, items_id={"id": computer_id, "name": f"Poste {computer_id}"})
+                    for row in rows
+                ]
             return kind, rows
         if name == "getMultipleItems":
             grouped: dict[str, dict[str, str]] = {}
