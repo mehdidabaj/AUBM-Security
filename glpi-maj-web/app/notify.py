@@ -16,30 +16,46 @@ from app.sources.cache import get_cache
 
 
 def notify_changes(db: Session, settings: Settings, send=None) -> bool:
-    """Envoie un message si une nouvelle CVE KEV ou un Patch Tuesday concerne le parc.
+    """Envoie un message si une CVE KEV, une alerte CERT-FR ou un Patch Tuesday concerne le parc.
 
     Le premier passage mémorise l'état connu sans envoyer de message.
     """
     kev_ids = set((payload_of(get_cache(db, "kev", "catalog")).get("cves") or {}))
+    certfr_ids = _certfr_alert_ids(db)
     release = payload_of(get_cache(db, "msrc", "catalog")).get("release_id") or ""
     known_kev = get_setting(db, "notified_kev", None)
     known_release = get_setting(db, "notified_msrc", None)
+    known_certfr = get_setting(db, "notified_certfr", None)
     if known_kev is None and known_release is None:
         set_setting(db, "notified_kev", sorted(kev_ids))
         set_setting(db, "notified_msrc", release)
+        set_setting(db, "notified_certfr", sorted(certfr_ids))
         return False
+    if known_certfr is None:
+        set_setting(db, "notified_certfr", sorted(certfr_ids))
+        new_certfr: list[str] = []
+    else:
+        new_certfr = sorted(certfr_ids - set(known_certfr or []))
     new_kev = sorted(kev_ids - set(known_kev or []))
     new_patch = bool(release and known_release is not None and release != known_release)
-    lines = _affected_lines(db, new_kev, new_patch)
+    lines = _affected_lines(db, new_kev, new_patch, new_certfr)
     set_setting(db, "notified_kev", sorted(kev_ids))
     set_setting(db, "notified_msrc", release)
+    set_setting(db, "notified_certfr", sorted(certfr_ids))
     if not lines or not get_setting(db, "smtp_enabled", False):
         return False
     _send(settings, db, lines, send)
     return True
 
 
-def _affected_lines(db: Session, new_kev: list[str], new_patch: bool) -> list[str]:
+def _certfr_alert_ids(db: Session) -> set[str]:
+    catalog = payload_of(get_cache(db, "certfr", "catalog")).get("cves") or {}
+    if not isinstance(catalog, dict):
+        return set()
+    return {cve_id for cve_id, row in catalog.items() if isinstance(row, dict) and row.get("alert")}
+
+
+def _affected_lines(db: Session, new_kev: list[str], new_patch: bool, new_certfr: list[str]) -> list[str]:
     run = latest_successful(db)
     if run is None:
         return []
@@ -70,6 +86,17 @@ def _affected_lines(db: Session, new_kev: list[str], new_patch: bool) -> list[st
         )
         if computers:
             lines.append("Nouveau Patch Tuesday : des postes n'ont pas le build corrigé.")
+            lines.append("Postes concernés : " + ", ".join(computers))
+    if new_certfr:
+        computers = sorted(
+            {
+                names.get(action.glpi_computer_id, str(action.glpi_computer_id))
+                for action in actions
+                if any(cve in (action.cves_json or "") for cve in new_certfr)
+            }
+        )
+        if computers:
+            lines.append("Nouvelles alertes CERT-FR : " + ", ".join(new_certfr))
             lines.append("Postes concernés : " + ", ".join(computers))
     return lines
 

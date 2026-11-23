@@ -8,6 +8,9 @@ from app.glpi.normalize import normalize_name
 USER_AGENT = "glpi-maj-web/1.0"
 WINGET_REPO = "https://github.com/microsoft/winget-pkgs.git"
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+CERTFR_AVIS_URL = "https://www.cert.cyber.gouv.fr/avis/json/"
+CERTFR_ALERTE_URL = "https://www.cert.cyber.gouv.fr/alerte/json/"
+CERTFR_SITE = "https://www.cert.cyber.gouv.fr"
 MSRC_UPDATES = "https://api.msrc.microsoft.com/cvrf/v3.0/updates"
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 ENDOLIFE_URL = "https://endoflife.date/api/{product}.json"
@@ -28,6 +31,7 @@ SOURCE_LABELS = (
     ("msrc", "Correctifs Microsoft (MSRC)"),
     ("nvd", "Failles (NVD)"),
     ("kev", "Failles exploitées (CISA KEV)"),
+    ("certfr", "Avis de sécurité (CERT-FR)"),
     ("feeds", "Avis des éditeurs"),
 )
 

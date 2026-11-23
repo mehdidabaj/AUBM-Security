@@ -8,7 +8,7 @@ import httpx
 
 from app.sources.cache import get_cache, payload_of, put_cache, source_overview, version_target
 from app.sources.limiter import RateLimiter
-from app.sources.parsers import parse_feed, parse_msrc
+from app.sources.parsers import parse_certfr, parse_feed, parse_msrc
 from app.sources.service import _nvd_get, load_fallback_if_needed, update_sources
 from app.sources.winget import parse_manifests, winget_commands
 from app.timeutils import utcnow
@@ -62,6 +62,14 @@ def test_analyse_msrc_endoflife_et_flux():
     entries = parse_feed(_read("chrome_feed.xml"))
     assert entries[0]["version"] == "157.0.8103.50"
     assert entries[0]["url"].endswith("stable.html")
+    avis = parse_certfr(json.loads(_read("certfr_avis_chrome.json")), kind="avis")
+    assert avis["alert"] is False
+    assert avis["cves"] == [{"id": "CVE-2026-2857"}]
+    assert avis["systems"][0]["product"] == "Chrome"
+    assert avis["url"].endswith("/avis/CERTFR-2026-AVI-0001/")
+    alerte = parse_certfr(json.loads(_read("certfr_alerte_chrome.json")), kind="alerte")
+    assert alerte["alert"] is True
+    assert alerte["url"].endswith("/alerte/CERTFR-2026-ALE-001/")
 
 
 def test_reprise_nvd_apres_429():
@@ -109,6 +117,14 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
                 return httpx.Response(200, json=json.loads(_read("nvd_notepad.json")))
         if url.startswith("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"):
             return httpx.Response(200, json=json.loads(_read("kev.json")))
+        if url.rstrip("/").endswith("/avis/json"):
+            return httpx.Response(200, json=json.loads(_read("certfr_avis_index.json")))
+        if url.rstrip("/").endswith("/alerte/json"):
+            return httpx.Response(200, json=json.loads(_read("certfr_alerte_index.json")))
+        if "CERTFR-2026-AVI-0001" in url:
+            return httpx.Response(200, json=json.loads(_read("certfr_avis_chrome.json")))
+        if "CERTFR-2026-ALE-001" in url:
+            return httpx.Response(200, json=json.loads(_read("certfr_alerte_chrome.json")))
         if "chromereleases.googleblog.com" in url:
             return httpx.Response(200, text=_read("chrome_feed.xml"))
         return httpx.Response(500, text="inattendu " + url)
@@ -158,6 +174,11 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
         assert payload_of(get_cache(db, "github", "notepadpp"))["version"] == "8.9.7"
         assert payload_of(get_cache(db, "nvd", "chrome"))["cves"][0]["cvss"] == 9.1
         assert "CVE-2026-1000" in payload_of(get_cache(db, "kev", "catalog"))["cves"]
+        certfr = payload_of(get_cache(db, "certfr", "catalog"))["cves"]
+        assert certfr["CVE-2026-2857"]["products"] == ["chrome"]
+        assert certfr["CVE-2026-2857"]["alert"] is False
+        assert certfr["CVE-2026-9999"]["alert"] is True
+        assert not any("CERTFR-2024" in url or "AVI-0002" in url for url in seen)
         assert not any("firefox" in url or "api.msrc" in url or "endoflife" in url for url in seen)
 
         update_sources(db, app.state.settings, now=NOW, **common)

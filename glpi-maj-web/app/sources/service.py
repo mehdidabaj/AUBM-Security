@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,9 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models.sources import SourceRun
-from app.settings_store import get_setting
+from app.settings_store import get_setting, set_setting
 from app.sources.cache import get_cache, mark_checked, mark_error, payload_of, put_cache, remember_version
 from app.sources.catalog import (
+    CERTFR_ALERTE_URL,
+    CERTFR_AVIS_URL,
+    CERTFR_SITE,
     ENDOLIFE_URL,
     FEEDS,
     GITHUB_RELEASE,
@@ -22,16 +26,21 @@ from app.sources.catalog import (
     SOURCE_LABELS,
     USER_AGENT,
     Product,
+    match_key,
     match_products,
 )
 from app.sources.http import get_with_retries, make_client
 from app.sources.limiter import RateLimiter
-from app.sources.parsers import parse_endoflife, parse_feed, parse_github_release, parse_kev, parse_msrc, parse_nvd
+from app.sources.parsers import parse_certfr, parse_endoflife, parse_feed, parse_github_release, parse_kev, parse_msrc, parse_nvd
 from app.sources.winget import update_winget
 from app.timeutils import utcnow
 
 FALLBACK_PATH = Path(__file__).resolve().parents[1] / "referentiel" / "secours.json"
 NVD_RETRY = {403, 429, 503}
+CERTFR_AVIS_DAYS = 120
+CERTFR_ALERTE_DAYS = 180
+CERTFR_MAX_AVIS = 25
+CERTFR_MAX_ALERTES = 15
 
 
 def load_fallback_if_needed(db: Session, path: Path | None = None) -> int:
@@ -53,6 +62,16 @@ def load_fallback_if_needed(db: Session, path: Path | None = None) -> int:
             put_cache(db, "fallback", slug, {"eol": True}, origin="fallback", checked=False)
             created += 1
     return created
+
+
+def enable_new_sources(db: Session) -> None:
+    """Coche les sources ajoutées après un enregistrement des cases à cocher."""
+    stored = get_setting(db, "sources_enabled", None)
+    if not isinstance(stored, dict):
+        return
+    missing = {key: True for key, _label in SOURCE_LABELS if key not in stored}
+    if missing:
+        set_setting(db, "sources_enabled", {**stored, **missing})
 
 
 def enabled_sources(db: Session) -> set[str]:
@@ -136,7 +155,7 @@ def update_sources(
 
 def probe_source(settings: Settings, key: str, http: httpx.Client | None = None) -> dict:
     """Vérifie qu'une source répond, sans lancer une collecte complète."""
-    from app.sources.catalog import FEEDS, KEV_URL, MSRC_UPDATES, NVD_URL
+    from app.sources.catalog import CERTFR_AVIS_URL, FEEDS, KEV_URL, MSRC_UPDATES, NVD_URL
 
     targets = {
         "winget": "https://github.com/microsoft/winget-pkgs",
@@ -145,6 +164,7 @@ def probe_source(settings: Settings, key: str, http: httpx.Client | None = None)
         "msrc": MSRC_UPDATES,
         "nvd": NVD_URL,
         "kev": KEV_URL,
+        "certfr": CERTFR_AVIS_URL,
         "feeds": FEEDS["chrome"],
     }
     url = targets.get(key)
@@ -231,6 +251,8 @@ def _dispatch(db, settings, client, key, products, sleep, limiter, runner, now) 
         return _collect_nvd(db, settings, client, products, sleep, limiter, now)
     if key == "kev":
         return _collect_kev(db, client, products, sleep, now)
+    if key == "certfr":
+        return _collect_certfr(db, client, products, sleep, now)
     if key == "feeds":
         return _collect_feeds(db, client, products, sleep, now)
     return 0
@@ -442,6 +464,166 @@ def _collect_kev(db, client, products, sleep, now) -> int:
     return len(parsed["cves"])
 
 
+def _collect_certfr(db, client, products, sleep, now) -> int:
+    if not products:
+        return 0
+    cached = get_cache(db, "certfr", "catalog")
+    if cached and cached.checked_at and cached.checked_at.date() == now.date() and not cached.last_error:
+        return len((payload_of(cached).get("cves") or {}))
+    avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
+    alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
+    selected = _certfr_pick(avis, products, now, CERTFR_AVIS_DAYS, CERTFR_MAX_AVIS, "avis")
+    selected += _certfr_pick(alertes, products, now, CERTFR_ALERTE_DAYS, CERTFR_MAX_ALERTES, "alerte")
+    cves: dict[str, dict] = {}
+    for item in selected:
+        response = get_with_retries(
+            client,
+            _certfr_detail_url(item),
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            sleep=sleep,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"CERT-FR a répondu HTTP {response.status_code} pour {item.get('reference')}.")
+        parsed = parse_certfr(response.json(), kind=item["kind"])
+        slugs = _certfr_slugs(parsed, products)
+        if not slugs or not parsed["cves"]:
+            continue
+        for cve in parsed["cves"]:
+            _remember_certfr(cves, parsed, cve["id"], slugs)
+    put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
+    return len(cves)
+
+
+def _certfr_index(client, url: str, sleep) -> list:
+    response = get_with_retries(client, url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, sleep=sleep)
+    if response.status_code >= 400:
+        raise RuntimeError(f"CERT-FR a répondu HTTP {response.status_code}.")
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise RuntimeError("L'index CERT-FR n'est pas une liste.")
+    return payload
+
+
+def _certfr_pick(rows: list, products: list[Product], now: datetime, days: int, limit: int, kind: str) -> list[dict]:
+    cutoff = now - timedelta(days=days)
+    chosen = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        revised = _certfr_date(row.get("last_revision_date"))
+        if revised is None or revised < cutoff:
+            continue
+        if not _slugs_in(str(row.get("title") or ""), products):
+            continue
+        chosen.append({**row, "kind": kind})
+    chosen.sort(key=lambda item: str(item.get("last_revision_date") or ""), reverse=True)
+    return chosen[:limit]
+
+
+def _certfr_date(value: object) -> datetime | None:
+    text = str(value or "")[:10]
+    try:
+        return datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _certfr_detail_url(row: dict) -> str:
+    path = str(row.get("json_url") or "")
+    if path.startswith(f"{CERTFR_SITE}/") and ".." not in path:
+        return path
+    if path.startswith(("/avis/", "/alerte/")) and ".." not in path:
+        return CERTFR_SITE + path
+    reference = str(row.get("reference") or "")
+    kind = "alerte" if row.get("kind") == "alerte" or "-ALE-" in reference else "avis"
+    if not reference or "/" in reference or ".." in reference:
+        raise RuntimeError("Référence CERT-FR inattendue.")
+    return f"{CERTFR_SITE}/{kind}/{reference}/json/"
+
+
+def _certfr_slugs(parsed: dict, products: list[Product]) -> list[str]:
+    texts = [parsed.get("title") or "", parsed.get("summary") or ""]
+    for system in parsed.get("systems") or []:
+        texts.append(f"{system.get('vendor', '')} {system.get('product', '')}")
+        texts.append(system.get("description") or "")
+    found: set[str] = set()
+    for text in texts:
+        found |= _slugs_in(text, products, families=False)
+    blob = " ".join(texts)
+    if not any(slug.startswith("windows") for slug in found):
+        found |= _family_slugs(blob, products, "windows")
+    if not any(slug.startswith("office") or slug == "m365" for slug in found):
+        found |= _family_slugs(blob, products, "office")
+    if "java8" not in found:
+        found |= _family_slugs(blob, products, "java")
+    return sorted(found)
+
+
+def _slugs_in(text: str, products: list[Product], *, families: bool = True) -> set[str]:
+    key = match_key(text)
+    if not key:
+        return set()
+    found: set[str] = set()
+    for product in products:
+        for alias in product.aliases:
+            if re.search(rf"(?<![\w+]){re.escape(alias)}(?![\w+])", key):
+                found.add(product.slug)
+                break
+    if not families:
+        return found
+    found |= _family_slugs(key, products, "windows", already=found)
+    found |= _family_slugs(key, products, "office", already=found)
+    found |= _family_slugs(key, products, "java", already=found)
+    return found
+
+
+def _family_slugs(text: str, products: list[Product], family: str, already: set[str] | None = None) -> set[str]:
+    known = already or set()
+    key = match_key(text)
+    if family == "windows":
+        if any(slug.startswith("windows") for slug in known):
+            return set()
+        if not re.search(r"(?<![\w+])windows(?![\w+])", key):
+            return set()
+        return {product.slug for product in products if product.slug.startswith("windows")}
+    if family == "office":
+        if any(slug.startswith("office") or slug == "m365" for slug in known):
+            return set()
+        if not re.search(r"(?<![\w+])(?:office|microsoft 365)(?![\w+])", key):
+            return set()
+        return {product.slug for product in products if product.slug.startswith("office") or product.slug == "m365"}
+    if any(slug == "java8" for slug in known) or not re.search(r"(?<![\w+])java(?![\w+])", key):
+        return set()
+    return {product.slug for product in products if product.slug == "java8"}
+
+
+def _remember_certfr(cves: dict, parsed: dict, cve_id: str, slugs: list[str]) -> None:
+    previous = cves.get(cve_id)
+    products = list(slugs)
+    alert = bool(parsed["alert"])
+    url = parsed["url"]
+    title = parsed["title"]
+    summary = parsed["summary"]
+    reference = parsed["reference"]
+    if previous:
+        products = sorted(set(previous["products"]) | set(products))
+        if previous["alert"] and not alert:
+            url = previous["url"]
+            title = previous["title"]
+            summary = previous["summary"]
+            reference = previous["reference"]
+        alert = previous["alert"] or alert
+    cves[cve_id] = {
+        "id": cve_id,
+        "url": url,
+        "title": title,
+        "summary": summary,
+        "alert": alert,
+        "reference": reference,
+        "products": products,
+    }
+
+
 def _collect_feeds(db, client, products, sleep, now) -> int:
     feed_ids = sorted({product.feed for product in products if product.feed})
     count = 0
@@ -459,6 +641,9 @@ def _collect_feeds(db, client, products, sleep, now) -> int:
 def _mark_source_error(db, key: str, products: list[Product], message: str) -> None:
     if key == "kev":
         mark_error(db, "kev", "catalog", message)
+        return
+    if key == "certfr":
+        mark_error(db, "certfr", "catalog", message)
         return
     if key == "msrc":
         mark_error(db, "msrc", "catalog", message)

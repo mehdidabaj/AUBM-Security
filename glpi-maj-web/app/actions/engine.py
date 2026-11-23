@@ -323,7 +323,7 @@ def _display_target(target: dict) -> str:
 def _severity(cves: list[dict], eol: bool, critical: float, important: float) -> str:
     scores = [float(item["cvss"]) for item in cves if isinstance(item.get("cvss"), (int, float))]
     highest = max(scores) if scores else None
-    if eol or any(item.get("kev") for item in cves) or (highest is not None and highest >= critical):
+    if eol or any(item.get("kev") or item.get("certfr_alert") for item in cves) or (highest is not None and highest >= critical):
         return "critique"
     if highest is not None and highest >= important:
         return "important"
@@ -333,6 +333,7 @@ def _severity(cves: list[dict], eol: bool, critical: float, important: float) ->
 def _cves_for(db: Session, slug: str) -> list[dict]:
     nvd = payload_of(get_cache(db, "nvd", slug)).get("cves") or []
     kev = payload_of(get_cache(db, "kev", "catalog")).get("cves") or {}
+    certfr = payload_of(get_cache(db, "certfr", "catalog")).get("cves") or {}
     found = []
     seen = set()
     for item in nvd:
@@ -344,6 +345,7 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
         row["kev"] = cve_id in kev
         if row["kev"]:
             row["url"] = kev[cve_id].get("url") or row.get("url")
+        _apply_certfr(row, certfr, cve_id, slug)
         found.append(row)
     label = PRODUCTS[slug].label.lower() if slug in PRODUCTS else slug
     for cve_id, row in kev.items():
@@ -351,22 +353,57 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
             continue
         product = f"{row.get('vendor', '')} {row.get('product', '')}".lower()
         if label in product or slug.replace("-", " ") in product:
+            seen.add(cve_id)
+            extra = {
+                "id": cve_id,
+                "cvss": None,
+                "summary": row.get("description") or "",
+                "url": row.get("url") or "",
+                "kev": True,
+            }
+            _apply_certfr(extra, certfr, cve_id, slug)
+            found.append(extra)
+    if isinstance(certfr, dict):
+        for cve_id, row in certfr.items():
+            if cve_id in seen or not isinstance(row, dict):
+                continue
+            if slug not in (row.get("products") or []):
+                continue
             found.append(
                 {
                     "id": cve_id,
                     "cvss": None,
-                    "summary": row.get("description") or "",
+                    "summary": row.get("summary") or row.get("title") or "",
                     "url": row.get("url") or "",
-                    "kev": True,
+                    "kev": cve_id in kev,
+                    "certfr": True,
+                    "certfr_alert": bool(row.get("alert")),
+                    "certfr_url": row.get("url") or "",
                 }
             )
     return found
+
+
+def _apply_certfr(row: dict, certfr: object, cve_id: str, slug: str) -> None:
+    info = certfr.get(cve_id) if isinstance(certfr, dict) else None
+    products = info.get("products") if isinstance(info, dict) else None
+    if isinstance(info, dict) and slug in (products or []):
+        row["certfr"] = True
+        row["certfr_alert"] = bool(info.get("alert"))
+        row["certfr_url"] = info.get("url") or ""
+        return
+    row["certfr"] = False
+    row["certfr_alert"] = False
+    row["certfr_url"] = ""
 
 
 def _best_url(cves: list[dict], fallback: str) -> str:
     for item in cves:
         if item.get("kev") and item.get("url"):
             return item["url"]
+    for item in cves:
+        if item.get("certfr_alert") and item.get("certfr_url"):
+            return item["certfr_url"]
     for item in cves:
         if item.get("url"):
             return item["url"]

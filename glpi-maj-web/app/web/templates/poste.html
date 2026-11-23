@@ -40,7 +40,7 @@
     {% if item.cves %}
     <ul>
       {% for cve in item.cves %}
-      <li>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.kev %} (KEV){% endif %}{% if cve.cvss is not none %} — CVSS {{ cve.cvss }}{% endif %}</li>
+      <li>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.kev %} (KEV){% endif %}{% if cve.certfr %} ({% if cve.certfr_url and cve.certfr_url != cve.url %}<a href="{{ cve.certfr_url }}" target="_blank" rel="noopener">CERT-FR{% if cve.certfr_alert %} alerte{% endif %}</a>{% else %}CERT-FR{% if cve.certfr_alert %} alerte{% endif %}{% endif %}){% endif %}{% if cve.cvss is not none %} — CVSS {{ cve.cvss }}{% endif %}</li>
       {% endfor %}
     </ul>
     {% endif %}

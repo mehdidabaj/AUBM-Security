@@ -249,6 +249,62 @@ def test_notification_kev_et_patch_tuesday(app):
         db.close()
 
 
+def test_certfr_relie_les_cves_au_produit(app):
+    db = app.state.SessionLocal()
+    try:
+        load_fallback_if_needed(db)
+        put_cache(
+            db,
+            "nvd",
+            "chrome",
+            {"cves": [{"id": "CVE-2026-2857", "cvss": 4.3, "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-2857", "summary": "Chrome"}]},
+            origin="live",
+        )
+        put_cache(
+            db,
+            "certfr",
+            "catalog",
+            {
+                "cves": {
+                    "CVE-2026-2857": {
+                        "id": "CVE-2026-2857",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0001/",
+                        "summary": "Avis",
+                        "alert": False,
+                        "products": ["chrome"],
+                    },
+                    "CVE-2026-9999": {
+                        "id": "CVE-2026-9999",
+                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
+                        "summary": "Alerte",
+                        "alert": True,
+                        "products": ["chrome"],
+                    },
+                    "CVE-2026-4000": {
+                        "id": "CVE-2026-4000",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0009/",
+                        "summary": "Firefox",
+                        "alert": True,
+                        "products": ["firefox"],
+                    },
+                }
+            },
+            origin="live",
+        )
+        save_check(db, [_machine(software=[SoftwareItem("Google Chrome", "Google", "120.0")])], "demo")
+        action = _kinds(db, 1)["version:chrome"]
+        cves = {item["id"]: item for item in json.loads(action.cves_json)}
+        assert cves["CVE-2026-2857"]["certfr"] is True
+        assert cves["CVE-2026-2857"]["certfr_alert"] is False
+        assert "cert.cyber.gouv.fr/avis/" in cves["CVE-2026-2857"]["certfr_url"]
+        assert cves["CVE-2026-9999"]["certfr_alert"] is True
+        assert "CVE-2026-4000" not in cves
+        assert action.severity == "critique"
+        assert "CERTFR-2026-ALE-001" in action.source_url
+    finally:
+        db.close()
+
+
 def test_noms_inconnus_et_correspondance_manuelle(app):
     db = app.state.SessionLocal()
     try:

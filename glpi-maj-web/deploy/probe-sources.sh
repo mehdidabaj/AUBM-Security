@@ -21,5 +21,6 @@ verifier "endoflife.date" "https://endoflife.date/api/windows.json" || echec=1
 verifier "MSRC" "https://api.msrc.microsoft.com/cvrf/v3.0/updates" || echec=1
 verifier "NVD" "https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=1" || echec=1
 verifier "CISA KEV" "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" || echec=1
+verifier "CERT-FR" "https://www.cert.cyber.gouv.fr/avis/json/" || echec=1
 verifier "Avis Chrome" "https://chromereleases.googleblog.com/feeds/posts/default" || echec=1
 exit "$echec"

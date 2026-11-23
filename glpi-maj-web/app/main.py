@@ -35,9 +35,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             from app.actions.mapping import seed_mappings
             from app.actions.rules import ensure_rules
-            from app.sources.service import load_fallback_if_needed
+            from app.sources.service import enable_new_sources, load_fallback_if_needed
 
             load_fallback_if_needed(db)
+            enable_new_sources(db)
             seed_mappings(db)
             ensure_rules(db)
             from app.glpi.service import abandon_running

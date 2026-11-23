@@ -147,6 +147,45 @@ def parse_kev(payload: dict) -> dict:
     return {"catalog_version": payload.get("catalogVersion") or "", "cves": cves}
 
 
+def parse_certfr(payload: dict, *, kind: str) -> dict:
+    reference = str(payload.get("reference") or "").strip()
+    alert = kind == "alerte" or "-ALE-" in reference
+    section = "alerte" if alert else "avis"
+    cves = []
+    for item in payload.get("cves") or []:
+        if isinstance(item, str):
+            name = item
+        elif isinstance(item, dict):
+            name = str(item.get("name") or item.get("id") or "")
+        else:
+            continue
+        name = name.strip().upper()
+        if name.startswith("CVE-"):
+            cves.append({"id": name})
+    systems = []
+    for system in payload.get("affected_systems") or []:
+        if not isinstance(system, dict):
+            continue
+        product = system.get("product") if isinstance(system.get("product"), dict) else {}
+        vendor = product.get("vendor") if isinstance(product.get("vendor"), dict) else {}
+        systems.append(
+            {
+                "vendor": str(vendor.get("name") or ""),
+                "product": str(product.get("name") or ""),
+                "description": str(system.get("description") or ""),
+            }
+        )
+    return {
+        "reference": reference,
+        "title": str(payload.get("title") or ""),
+        "summary": str(payload.get("summary") or ""),
+        "url": f"https://www.cert.cyber.gouv.fr/{section}/{reference}/" if reference else "",
+        "alert": alert,
+        "cves": cves,
+        "systems": systems,
+    }
+
+
 def parse_feed(xml_text: str) -> list[dict]:
     root = ET.fromstring(xml_text)
     entries = []

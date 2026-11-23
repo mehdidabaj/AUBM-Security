@@ -21,7 +21,7 @@
         <td>{{ row.en_retard }}</td>
         <td>
           {% for cve in row.cves %}
-          <span>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.kev %} KEV{% endif %}</span>
+          <span>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.kev %} KEV{% endif %}{% if cve.certfr %} {% if cve.certfr_url and cve.certfr_url != cve.url %}<a href="{{ cve.certfr_url }}" target="_blank" rel="noopener">CERT-FR{% if cve.certfr_alert %} alerte{% endif %}</a>{% else %}CERT-FR{% if cve.certfr_alert %} alerte{% endif %}{% endif %}{% endif %}</span>
           {% else %}—{% endfor %}
         </td>
       </tr>
