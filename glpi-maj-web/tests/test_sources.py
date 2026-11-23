@@ -70,6 +70,27 @@ def test_analyse_msrc_endoflife_et_flux():
     alerte = parse_certfr(json.loads(_read("certfr_alerte_chrome.json")), kind="alerte")
     assert alerte["alert"] is True
     assert alerte["url"].endswith("/alerte/CERTFR-2026-ALE-001/")
+    assert {item["id"] for item in alerte["cves"]} == {"CVE-2026-1000", "CVE-2026-9999"}
+
+
+def test_certfr_ne_retient_que_le_dernier_bulletin_de_chaque_logiciel():
+    from app.sources.catalog import PRODUCTS
+    from app.sources.service import _certfr_latest_rows, _newest_cve
+
+    products = [PRODUCTS["chrome"], PRODUCTS["firefox"]]
+    avis = [
+        {"reference": "OLD", "title": "Vulnérabilité dans Google Chrome", "last_revision_date": "2026-01-01T00:00:00"},
+        {"reference": "FF", "title": "Vulnérabilité dans Mozilla Firefox", "last_revision_date": "2026-02-01T00:00:00"},
+    ]
+    alertes = [
+        {"reference": "NEW", "title": "Alerte dans Google Chrome", "last_revision_date": "2026-03-01T00:00:00"},
+    ]
+    latest = _certfr_latest_rows(avis, alertes, products)
+    assert latest["chrome"]["reference"] == "NEW"
+    assert latest["firefox"]["reference"] == "FF"
+    kept = _newest_cve([{"id": "CVE-2026-1000"}, {"id": "CVE-2026-9999"}])
+    assert kept is not None
+    assert kept["id"] == "CVE-2026-9999"
 
 
 def test_reprise_nvd_apres_429():
@@ -180,10 +201,11 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
             for host in ("nvd.nist.gov", "known_exploited", "endoflife.date", "googleblog.com", "mozilla.org")
         )
         certfr = payload_of(get_cache(db, "certfr", "catalog"))["cves"]
-        assert certfr["CVE-2026-2857"]["products"] == ["chrome"]
-        assert certfr["CVE-2026-2857"]["alert"] is False
+        assert list(certfr) == ["CVE-2026-9999"]
+        assert certfr["CVE-2026-9999"]["products"] == ["chrome"]
         assert certfr["CVE-2026-9999"]["alert"] is True
-        assert not any("CERTFR-2024" in url or "AVI-0002" in url for url in seen)
+        assert not any("CERTFR-2024" in url or "AVI-0001" in url or "AVI-0002" in url for url in seen)
+        assert any("ALE-001" in url for url in seen)
         assert not any("firefox" in url or "api.msrc" in url or "endoflife" in url for url in seen)
 
         update_sources(db, app.state.settings, now=NOW, **common)

@@ -39,8 +39,6 @@ from app.timeutils import utcnow
 FALLBACK_PATH = Path(__file__).resolve().parents[1] / "referentiel" / "secours.json"
 NVD_RETRY = {403, 429, 503}
 VULN_RECENT_DAYS = 120
-CERTFR_MAX_AVIS = 80
-CERTFR_MAX_ALERTES = 20
 
 
 def load_fallback_if_needed(db: Session, path: Path | None = None) -> int:
@@ -503,10 +501,15 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         return len((payload_of(cached).get("cves") or {}))
     avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
     alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
-    selected = _certfr_pick(avis, products, now, VULN_RECENT_DAYS, CERTFR_MAX_AVIS, "avis")
-    selected += _certfr_pick(alertes, products, now, VULN_RECENT_DAYS, CERTFR_MAX_ALERTES, "alerte")
+    latest = _certfr_latest_rows(avis, alertes, products)
+    chosen = {slug: str(row.get("reference") or "") for slug, row in latest.items()}
     cves: dict[str, dict] = {}
-    for item in selected:
+    seen_refs: set[str] = set()
+    for item in latest.values():
+        reference = str(item.get("reference") or "")
+        if not reference or reference in seen_refs:
+            continue
+        seen_refs.add(reference)
         response = get_with_retries(
             client,
             _certfr_detail_url(item),
@@ -514,13 +517,14 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
             sleep=sleep,
         )
         if response.status_code >= 400:
-            raise RuntimeError(f"CERT-FR a répondu HTTP {response.status_code} pour {item.get('reference')}.")
+            raise RuntimeError(f"CERT-FR a répondu HTTP {response.status_code} pour {reference}.")
         parsed = parse_certfr(response.json(), kind=item["kind"])
-        slugs = _certfr_slugs(parsed, products)
-        if not slugs or not parsed["cves"]:
+        parsed["revised"] = str(item.get("last_revision_date") or "")
+        owned = [slug for slug in _certfr_slugs(parsed, products) if chosen.get(slug) == reference]
+        cve = _newest_cve(parsed["cves"])
+        if not owned or cve is None:
             continue
-        for cve in parsed["cves"]:
-            _remember_certfr(cves, parsed, cve["id"], slugs)
+        _remember_certfr(cves, parsed, cve["id"], owned)
     put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
     return len(cves)
 
@@ -535,20 +539,45 @@ def _certfr_index(client, url: str, sleep) -> list:
     return payload
 
 
-def _certfr_pick(rows: list, products: list[Product], now: datetime, days: int, limit: int, kind: str) -> list[dict]:
-    cutoff = now - timedelta(days=days)
-    chosen = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        revised = _certfr_date(row.get("last_revision_date"))
-        if revised is None or revised < cutoff:
-            continue
-        if not _slugs_in(str(row.get("title") or ""), products):
-            continue
-        chosen.append({**row, "kind": kind})
-    chosen.sort(key=lambda item: str(item.get("last_revision_date") or ""), reverse=True)
-    return chosen[:limit]
+def _certfr_latest_rows(avis: list, alertes: list, products: list[Product]) -> dict[str, dict]:
+    """Le bulletin le plus récent de chaque logiciel suivi."""
+    newest: dict[str, dict] = {}
+    for kind, rows in (("avis", avis), ("alerte", alertes)):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            revised = _certfr_date(row.get("last_revision_date"))
+            if revised is None:
+                continue
+            slugs = _slugs_in(str(row.get("title") or ""), products)
+            if not slugs:
+                continue
+            stamped = {**row, "kind": kind, "revised": revised}
+            for slug in slugs:
+                current = newest.get(slug)
+                if current is None or _certfr_is_newer(stamped, current):
+                    newest[slug] = stamped
+    return newest
+
+
+def _certfr_is_newer(candidate: dict, current: dict) -> bool:
+    if candidate["revised"] != current["revised"]:
+        return candidate["revised"] > current["revised"]
+    return candidate["kind"] == "alerte" and current["kind"] != "alerte"
+
+
+def _newest_cve(cves: list[dict]) -> dict | None:
+    ranked = [item for item in cves if item.get("id")]
+    if not ranked:
+        return None
+    return max(ranked, key=lambda item: _cve_rank(str(item["id"])))
+
+
+def _cve_rank(cve_id: str) -> tuple[int, int, str]:
+    match = re.search(r"CVE-(\d+)-(\d+)", cve_id.upper())
+    if not match:
+        return (0, 0, cve_id)
+    return (int(match.group(1)), int(match.group(2)), cve_id)
 
 
 def _certfr_date(value: object) -> datetime | None:
@@ -651,6 +680,7 @@ def _remember_certfr(cves: dict, parsed: dict, cve_id: str, slugs: list[str]) ->
         "summary": summary,
         "alert": alert,
         "reference": reference,
+        "revised": parsed.get("revised") or "",
         "products": products,
     }
 
