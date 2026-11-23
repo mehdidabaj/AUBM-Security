@@ -62,7 +62,7 @@ def postes(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
     params = _params(request)
     view = computer_views(db, request.app.state.settings, params)
-    if request.headers.get("hx-request"):
+    if request.headers.get("hx-request") and request.query_params.get("live") != "1":
         return render(request, "postes_table.html", view=view, params=params)
     return render(request, "postes.html", view=view, params=params)
 
@@ -102,15 +102,24 @@ async def suivi(glpi_id: int, request: Request, db: Session = Depends(get_db)) -
 @router.get("/logiciels", response_class=HTMLResponse)
 def logiciels(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
-    return render(request, "logiciels.html", rows=software_rows(db))
+    from app.glpi.service import visible_run
+
+    run = visible_run(db)
+    return render(
+        request,
+        "logiciels.html",
+        rows=software_rows(db),
+        en_cours=run is not None and run.status == "running",
+        postes_lus=len(run.computers) if run is not None else 0,
+    )
 
 
 @router.get("/logiciels/a-associer", response_class=HTMLResponse)
 def a_associer(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
-    from app.glpi.service import latest_successful
+    from app.glpi.service import visible_run
 
-    run = latest_successful(db)
+    run = visible_run(db)
     names = []
     if run is not None:
         names = [item.name for computer in run.computers for item in computer.software]

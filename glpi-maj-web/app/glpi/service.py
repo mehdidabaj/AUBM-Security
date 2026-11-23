@@ -29,6 +29,14 @@ def latest_successful(db: Session) -> CheckRun | None:
     return db.scalar(select(CheckRun).where(CheckRun.status == "success").order_by(CheckRun.id.desc()))
 
 
+def visible_run(db: Session) -> CheckRun | None:
+    """Vérification affichée : celle en cours s'il y en a une, sinon la dernière réussie."""
+    current = db.scalar(select(CheckRun).order_by(CheckRun.id.desc()))
+    if current is not None and current.status == "running" and current.finished_at is None:
+        return current
+    return latest_successful(db)
+
+
 def build_summary(previous: CheckRun | None, computers: list[ComputerItem]) -> dict:
     current_ids = {computer.glpi_id for computer in computers}
     previous_ids = {record.glpi_id for record in previous.computers} if previous is not None else set()

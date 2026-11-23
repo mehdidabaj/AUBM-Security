@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Postes</h1>
-  <form class="filters" method="get" action="/postes" hx-get="/postes" hx-target="#liste" hx-push-url="true" hx-trigger="submit, change, keyup delay:400ms from:input[name=q]">
+  <form id="filtres-postes" class="filters" method="get" action="/postes" hx-get="/postes" hx-target="#liste" hx-push-url="true" hx-trigger="submit, change, keyup delay:400ms from:input[name=q]">
     <label>Service
       <select name="service">
         <option value="">Tous</option>
@@ -23,7 +23,7 @@
     <label>Priorité
       <select name="priorite">
         <option value="">Toutes</option>
-        {% for value, label in [("critique", "Critique"), ("important", "Important"), ("faible", "Faible"), ("a_jour", "À jour")] %}
+        {% for value, label in [("critique", "Critique"), ("important", "Important"), ("faible", "Faible"), ("lecture", "Lecture"), ("a_jour", "À jour")] %}
         <option value="{{ value }}" {% if params.priorite == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
@@ -49,7 +49,10 @@
     <button type="submit">Filtrer</button>
   </form>
 </section>
-<div id="liste">
+<div id="liste"{% if view.en_cours %} hx-get="/postes?live=1" hx-include="#filtres-postes" hx-trigger="every 2s" hx-select="#liste" hx-target="#liste" hx-swap="outerHTML"{% endif %}>
+  {% if view.en_cours %}
+  <p class="muted">Collecte en cours : {{ view.lus }} poste(s) déjà lu(s). Cette page se met à jour toute seule.</p>
+  {% endif %}
   {% include "postes_table.html" %}
 </div>
 {% endblock %}

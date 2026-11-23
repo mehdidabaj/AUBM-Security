@@ -3,6 +3,10 @@
 {% block content %}
 <section class="card">
   <h1>Logiciels suivis</h1>
+  <div id="logiciels-live"{% if en_cours %} hx-get="/logiciels" hx-trigger="every 2s" hx-select="#logiciels-live" hx-swap="outerHTML"{% endif %}>
+  {% if en_cours %}
+  <p class="muted">Collecte en cours : {{ postes_lus }} poste(s) lu(s). Ce tableau se met à jour tout seul, dès que les logiciels d'un poste sont lus.</p>
+  {% endif %}
   <table>
     <thead>
       <tr><th>Logiciel</th><th>Version la plus courante</th><th>Dernière publiée</th><th>À jour</th><th>En retard</th><th>CVE</th></tr>
@@ -22,9 +26,10 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6">Aucun logiciel reconnu.</td></tr>
+      <tr><td colspan="6">{% if en_cours %}Aucun logiciel reconnu pour l'instant. Ils apparaissent pendant la lecture des installations.{% else %}Aucun logiciel reconnu.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endblock %}

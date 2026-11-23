@@ -5,7 +5,7 @@
   <p><a href="/postes">Retour aux postes</a></p>
   <h1>{{ detail.computer.name }}</h1>
   <p><span class="badge {{ detail.priorite }}">{{ detail.priorite }}</span>
-    {% if detail.a_jour %} À jour{% else %} À mettre à jour{% endif %}</p>
+    {% if detail.en_cours and not detail.actions %} Lecture en cours{% elif detail.a_jour %} À jour{% else %} À mettre à jour{% endif %}</p>
   <dl class="facts">
     <div><dt>Service</dt><dd>{{ detail.computer.group_name or "—" }}</dd></div>
     <div><dt>Lieu</dt><dd>{{ detail.computer.location or "—" }}</dd></div>

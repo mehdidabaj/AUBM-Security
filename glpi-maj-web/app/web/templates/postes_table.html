@@ -20,11 +20,11 @@
         <td>{{ row.lieu or "—" }}</td>
         <td><span class="badge {{ row.priorite }}">{{ row.priorite_libelle }}</span></td>
         <td>{{ row.actions }}</td>
-        <td>{% if row.a_jour %}Oui{% else %}Non{% endif %}</td>
+        <td>{% if row.priorite == "lecture" %}—{% elif row.a_jour %}Oui{% else %}Non{% endif %}</td>
         <td><a href="{{ row.lien }}" target="_blank" rel="noopener">Ouvrir</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="7">Aucun poste ne correspond aux filtres.</td></tr>
+      <tr><td colspan="7">{% if view.en_cours %}Lecture en cours, aucun poste lu pour l'instant.{% else %}Aucun poste ne correspond aux filtres.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

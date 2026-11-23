@@ -4,15 +4,15 @@ import json
 from collections import Counter, defaultdict
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.actions.engine import follow_up_for, is_up_to_date, priority_of
 from app.actions.mapping import unmatched_names
 from app.actions.rules import include_low
 from app.actions.versions import is_outdated, parse_version
-from app.glpi.service import glpi_computer_url, latest_successful
+from app.glpi.service import glpi_computer_url, latest_successful, visible_run
 from app.models.actions import ComputedAction
-from app.models.inventory import CheckRun
+from app.models.inventory import CheckRun, ComputerRecord
 from app.models.sources import SourceRun
 from app.sources.cache import source_overview, version_target
 from app.sources.catalog import PRODUCTS
@@ -24,6 +24,7 @@ SEVERITY_LABELS = {
     "faible": "Faible",
     "a_jour": "À jour",
     "autre": "Autre",
+    "lecture": "Lecture",
 }
 STATUS_LABELS = {"a_faire": "À faire", "en_cours": "En cours", "fait": "Fait"}
 
@@ -35,20 +36,38 @@ def actions_by_computer(db: Session, run: CheckRun) -> dict[int, list[ComputedAc
     return grouped
 
 
+def _computers(db: Session, run: CheckRun) -> list[ComputerRecord]:
+    return list(
+        db.scalars(
+            select(ComputerRecord)
+            .where(ComputerRecord.check_run_id == run.id)
+            .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
+            .order_by(ComputerRecord.glpi_id)
+        )
+    )
+
+
 def computer_views(db: Session, settings: Settings, params: dict) -> dict:
-    run = latest_successful(db)
+    run = visible_run(db)
     if run is None:
-        return {"run": None, "rows": [], "services": [], "lieux": [], "logiciels": []}
+        return {"run": None, "en_cours": False, "lus": 0, "rows": [], "services": [], "lieux": [], "logiciels": []}
     grouped = actions_by_computer(db, run)
     count_low = include_low(db)
+    en_cours = run.status == "running"
     rows = []
     services = set()
     lieux = set()
     logiciels = set()
-    for computer in run.computers:
+    lus = 0
+    for computer in _computers(db, run):
+        lus += 1
         actions = grouped.get(computer.glpi_id, [])
-        priority = priority_of(actions)
-        up_to_date = is_up_to_date(actions, count_low)
+        if en_cours and not actions:
+            priority = "lecture"
+            up_to_date = False
+        else:
+            priority = priority_of(actions)
+            up_to_date = is_up_to_date(actions, count_low)
         names = sorted({item.name for item in computer.software})
         services.add(computer.group_name)
         lieux.add(computer.location)
@@ -87,7 +106,7 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
 
     def key(row):
         if sort == "priorite":
-            order = {"critique": 0, "important": 1, "faible": 2, "a_jour": 3}
+            order = {"critique": 0, "important": 1, "faible": 2, "lecture": 3, "a_jour": 4}
             return order.get(row["priorite"], 9)
         value = row.get(sort, row["nom"])
         if isinstance(value, str):
@@ -97,6 +116,8 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
     rows.sort(key=key, reverse=reverse)
     return {
         "run": run,
+        "en_cours": en_cours,
+        "lus": lus,
         "rows": rows,
         "services": sorted(item for item in services if item),
         "lieux": sorted(item for item in lieux if item),
@@ -157,10 +178,14 @@ def dashboard(db: Session, settings: Settings) -> dict:
 
 
 def computer_detail(db: Session, settings: Settings, glpi_id: int) -> dict | None:
-    run = latest_successful(db)
+    run = visible_run(db)
     if run is None:
         return None
-    computer = next((item for item in run.computers if item.glpi_id == glpi_id), None)
+    computer = db.scalar(
+        select(ComputerRecord)
+        .where(ComputerRecord.check_run_id == run.id, ComputerRecord.glpi_id == glpi_id)
+        .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
+    )
     if computer is None:
         return None
     actions = actions_by_computer(db, run).get(glpi_id, [])
@@ -174,21 +199,23 @@ def computer_detail(db: Session, settings: Settings, glpi_id: int) -> dict | Non
                 "suivi": follow,
             }
         )
+    en_cours = run.status == "running" and not actions
     return {
         "computer": computer,
         "actions": detailed,
-        "priorite": priority_of(actions),
-        "a_jour": is_up_to_date(actions, include_low(db)),
+        "priorite": "lecture" if en_cours else priority_of(actions),
+        "a_jour": False if en_cours else is_up_to_date(actions, include_low(db)),
+        "en_cours": run.status == "running",
         "lien": glpi_computer_url(settings, glpi_id),
     }
 
 
 def software_rows(db: Session) -> list[dict]:
-    run = latest_successful(db)
+    run = visible_run(db)
     if run is None:
         return []
     presence: dict[str, list[tuple[int, str]]] = defaultdict(list)
-    for computer in run.computers:
+    for computer in _computers(db, run):
         by_slug: dict[str, list[str]] = defaultdict(list)
         for software in computer.software:
             from app.actions.mapping import resolve_slug

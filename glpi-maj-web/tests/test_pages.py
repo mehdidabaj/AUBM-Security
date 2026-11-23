@@ -219,6 +219,57 @@ def test_progression_de_la_verification(client, app, admin):
     assert running == 0
 
 
+def test_postes_et_logiciels_suivent_la_collecte(client, app, admin):
+    from app.models.inventory import CheckRun, ComputerRecord, SoftwareInstall
+    from app.timeutils import utcnow
+
+    login(client, "admin", "motdepasse-admin")
+    db = app.state.SessionLocal()
+    try:
+        run = CheckRun(
+            started_at=utcnow(),
+            status="running",
+            origin="glpi",
+            computer_count=1,
+            summary_json="{}",
+            progress_current=20,
+            progress_total=100,
+            message="Lecture en cours",
+        )
+        db.add(run)
+        db.flush()
+        computer = ComputerRecord(
+            check_run_id=run.id,
+            glpi_id=77,
+            name="PC EN COURS",
+            group_name="Direction",
+            location="Rabat",
+            computer_type="Portable",
+            os_name="Windows 11",
+            os_version="26H2",
+            os_build="26300.1",
+        )
+        db.add(computer)
+        db.flush()
+        db.add(SoftwareInstall(computer_id=computer.id, name="Google Chrome", publisher="Google", version="120.0.1"))
+        db.commit()
+    finally:
+        db.close()
+
+    postes = client.get("/postes")
+    assert postes.status_code == 200
+    assert "PC EN COURS" in postes.text
+    assert "Collecte en cours" in postes.text
+    assert 'hx-trigger="every 2s"' in postes.text
+    assert "PC-COMPTA-01" not in postes.text
+    assert client.get("/postes/77").status_code == 200
+
+    logiciels = client.get("/logiciels")
+    assert "Google Chrome" in logiciels.text
+    assert 'id="logiciels-live"' in logiciels.text
+    assert 'hx-trigger="every 2s"' in logiciels.text
+
+
 def test_association_manuelle(client, app):
     from app.auth.service import create_user
 
