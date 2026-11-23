@@ -45,6 +45,7 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
         if linked:
             computer_id = int(linked.group(1))
             kind = linked.group(2)
+            sink.setdefault("details", []).append((computer_id, kind))
             rows = [row for row in resources[kind] if int(row.get("items_id") or 0) == computer_id]
             return kind, rows
         if name == "getMultipleItems":
@@ -363,6 +364,41 @@ def test_redemarrage_interrompt_la_verification_en_cours(app):
         db.refresh(run)
         assert run.status == "error"
         assert "redémarrage" in run.message
+    finally:
+        db.close()
+
+
+def test_deuxieme_collecte_ne_relit_que_les_postes_modifies(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    app.state.settings.demo_mode = "off"
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    db = app.state.SessionLocal()
+    try:
+        first = run_verification(
+            db,
+            app.state.settings,
+            http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, {}))),
+        )
+        assert "repris" not in first.message
+        payload["computers"][1]["date_mod"] = "2026-11-23 12:00:00"
+        payload["computers"] = [row for row in payload["computers"] if row["id"] != 3]
+        sink: dict = {}
+        second = run_verification(
+            db,
+            app.state.settings,
+            http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink))),
+        )
+        assert second.computer_count == 2
+        assert json.loads(second.summary_json)["postes_retires"] == [3]
+        assert "repris" in second.message
+        relus = {computer_id for computer_id, _kind in sink.get("details", [])}
+        assert relus == {2}
+        by_id = {computer.glpi_id: computer for computer in second.computers}
+        assert by_id[1].software[0].name == "Google Chrome"
+        assert by_id[1].os_build == "26300.9974"
+        assert by_id[1].agent is not None and by_id[1].agent.version == "1.21"
+        assert by_id[2].software[0].name == "Microsoft Office 2016"
     finally:
         db.close()
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 from sqlalchemy import delete, func, select
@@ -472,7 +472,59 @@ def _annulation_demandee(db: Session, run_id: int) -> bool:
     return bool(value)
 
 
-def finalize_run(db: Session, run: CheckRun) -> CheckRun:
+def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRecord], rows: list) -> None:
+    """Recopie le système, les logiciels et l'agent des postes dont GLPI n'a pas bougé."""
+    ids: set[int] = set()
+    for row in rows:
+        try:
+            ids.add(int(row["id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not ids or not sources:
+        return
+    targets = {
+        record.glpi_id: record
+        for record in db.scalars(
+            select(ComputerRecord).where(
+                ComputerRecord.check_run_id == run.id,
+                ComputerRecord.glpi_id.in_(ids),
+            )
+        )
+    }
+    for glpi_id in ids:
+        source = sources.get(glpi_id)
+        target = targets.get(glpi_id)
+        if source is None or target is None:
+            continue
+        target.os_name = source.os_name
+        target.os_version = source.os_version
+        target.os_build = source.os_build
+        db.flush()
+        db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id == target.id))
+        db.execute(delete(AgentRecord).where(AgentRecord.computer_id == target.id))
+        for software in source.software:
+            db.add(
+                SoftwareInstall(
+                    computer_id=target.id,
+                    name=software.name,
+                    publisher=software.publisher,
+                    version=software.version,
+                )
+            )
+        if source.agent is not None:
+            db.add(
+                AgentRecord(
+                    computer_id=target.id,
+                    glpi_id=source.agent.glpi_id,
+                    last_contact=source.agent.last_contact,
+                    version=source.agent.version,
+                    itemtype=source.agent.itemtype,
+                )
+            )
+    db.flush()
+
+
+def finalize_run(db: Session, run: CheckRun, reprise: int = 0) -> CheckRun:
     """Clôture la vérification déjà écrite, sans la réécrire."""
     now = utcnow()
     previous = latest_successful(db)
@@ -484,7 +536,10 @@ def finalize_run(db: Session, run: CheckRun) -> CheckRun:
     run.computer_count = len(records)
     run.progress_current = 100
     run.progress_total = 100
-    run.message = f"Collecte terminée : {_postes(len(records))}."
+    if reprise:
+        run.message = f"Collecte terminée : {_postes(len(records))}, dont {_postes(reprise)} repris sans relecture."
+    else:
+        run.message = f"Collecte terminée : {_postes(len(records))}."
     run.summary_json = json.dumps(
         {
             "postes_ajoutes": sorted(current_ids - previous_ids),
@@ -606,11 +661,29 @@ def run_verification(
         else:
             live = _LiveCatalog()
             meter = ProgressMeter(5)
+            previous = latest_successful(db)
+            sources: dict[int, ComputerRecord] = {}
+            known: dict[int, datetime | None] = {}
+            if previous is not None:
+                loaded = db.scalars(
+                    select(ComputerRecord)
+                    .where(ComputerRecord.check_run_id == previous.id)
+                    .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
+                ).all()
+                sources = {record.glpi_id: record for record in loaded}
+                known = {record.glpi_id: record.last_inventory_at for record in loaded}
+            reprise = {"count": 0}
 
             def on_progress(index: int, total_steps: int, step: str, read: int, total: int | None, chunk=None) -> None:
                 if _annulation_demandee(db, run.id):
                     raise VerificationCancelled()
-                noter_page(db, run, live, step, chunk or [])
+                rows = chunk or []
+                if step == "reprise":
+                    _reprendre_postes(db, run, sources, rows)
+                    reprise["count"] = len(rows)
+                    _publish(db, run, meter.floor, f"Reprise de {_postes(len(rows))} inchangés, sans relecture.")
+                    return
+                noter_page(db, run, live, step, rows)
                 if step not in _METER_STEPS:
                     return
                 pourcent = meter.update(step, read, total)
@@ -618,7 +691,7 @@ def run_verification(
                 _publish(db, run, pourcent, f"Lecture des {step} : {detail}")
 
             with GlpiClient(settings, http=http) as client:
-                client.collect(on_progress=on_progress)
+                client.collect(on_progress=on_progress, known=known or None)
         if _annulation_demandee(db, run.id):
             raise VerificationCancelled()
     except VerificationCancelled:
@@ -630,7 +703,7 @@ def run_verification(
         logger.exception("La lecture GLPI a échoué")
         save_check(db, [], run.origin, error="La lecture GLPI a échoué.", run=run)
         raise
-    return finalize_run(db, run)
+    return finalize_run(db, run, reprise=reprise["count"] if not settings.demo_active else 0)
 
 
 def _spawn_verification(app, run_id: int) -> None:

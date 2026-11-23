@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from datetime import datetime
 
 import httpx
 
@@ -97,8 +98,12 @@ class GlpiClient:
     def list_agents(self, on_page=None) -> list[dict]:
         return self._paginate("Agent", on_page=on_page)
 
-    def collect(self, on_progress=None) -> list[ComputerItem]:
-        """Lit les ordinateurs, puis seulement les versions qu'ils installent."""
+    def collect(self, on_progress=None, known: dict[int, datetime | None] | None = None) -> list[ComputerItem]:
+        """Lit les ordinateurs, puis seulement les versions des postes nouveaux ou modifiés.
+
+        known associe un identifiant GLPI à la date déjà enregistrée. Une date identique
+        ou plus ancienne évite de relire le système, les logiciels et l'agent.
+        """
 
         def report(index: int, label: str, read: int, total: int | None, chunk: list | None) -> None:
             if on_progress:
@@ -112,22 +117,27 @@ class GlpiClient:
         os_rows: list[dict] = []
         link_rows: list[dict] = []
         agent_rows: list[dict] = []
+        unchanged, pending = _split_changes(computers, known)
         total_computers = len(computers)
-        if total_computers == 0:
-            report(1, "postes", 0, 0, [])
-        for index, computer in enumerate(computers, start=1):
+        if unchanged:
+            report(1, "reprise", len(unchanged), total_computers, unchanged)
+        seen = len(unchanged)
+        if total_computers == 0 or not pending:
+            report(1, "postes", seen, total_computers, [])
+        for computer in pending:
             try:
                 computer_id = int(computer["id"])
             except (KeyError, TypeError, ValueError):
                 continue
+            seen += 1
             systems = self._subitems(computer_id, "Item_OperatingSystem")
             os_rows.extend(systems)
-            report(1, "systèmes", index, total_computers, systems)
+            report(1, "systèmes", seen, total_computers, systems)
             link_rows.extend(self._subitems(computer_id, "Item_SoftwareVersion"))
             agents = self._subitems(computer_id, "Agent")
             agent_rows.extend(agents)
-            report(1, "agents", index, total_computers, agents)
-            report(1, "postes", index, total_computers, [])
+            report(1, "agents", seen, total_computers, agents)
+            report(1, "postes", seen, total_computers, [])
 
         version_ids = _unique_ids(row.get("softwareversions_id") for row in link_rows)
         versions = self._fetch_many(
@@ -259,6 +269,26 @@ def _error_code(response: httpx.Response) -> str | None:
         if code in blob:
             return code
     return None
+
+
+def _split_changes(computers: list[dict], known: dict[int, datetime | None] | None) -> tuple[list[dict], list[dict]]:
+    if not known:
+        return [], list(computers)
+    unchanged: list[dict] = []
+    pending: list[dict] = []
+    for computer in computers:
+        try:
+            glpi_id = int(computer["id"])
+        except (KeyError, TypeError, ValueError):
+            pending.append(computer)
+            continue
+        previous = known.get(glpi_id)
+        current = parse_glpi_datetime(computer.get("date_mod"))
+        if previous is not None and current is not None and current <= previous:
+            unchanged.append(computer)
+        else:
+            pending.append(computer)
+    return unchanged, pending
 
 
 def _unique_ids(values) -> list[int]:
