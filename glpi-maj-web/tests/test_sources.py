@@ -8,7 +8,7 @@ import httpx
 
 from app.sources.cache import get_cache, payload_of, put_cache, source_overview, version_target
 from app.sources.limiter import RateLimiter
-from app.sources.parsers import parse_certfr, parse_feed, parse_msrc
+from app.sources.parsers import parse_certfr, parse_cve_score, parse_feed, parse_msrc, severity_name
 from app.sources.service import _nvd_get, load_fallback_if_needed, update_sources
 from app.sources.winget import parse_manifests, winget_commands
 from app.timeutils import utcnow
@@ -91,6 +91,10 @@ def test_certfr_ne_retient_que_le_dernier_bulletin_de_chaque_logiciel():
     kept = _newest_cve([{"id": "CVE-2026-1000"}, {"id": "CVE-2026-9999"}])
     assert kept is not None
     assert kept["id"] == "CVE-2026-9999"
+    score = parse_cve_score({"containers": {"adp": [{"metrics": [{"cvssV3_1": {"baseScore": 5.4, "baseSeverity": "MEDIUM"}}]}]}})
+    assert score["cvss"] == 5.4
+    assert severity_name(score["cvss"], cvss_label=score["cvss_label"]) == "moyenne"
+    assert severity_name(5.4, alert=True, cvss_label="MEDIUM") == "critique"
 
 
 def test_reprise_nvd_apres_429():
@@ -148,6 +152,15 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
             return httpx.Response(200, json=json.loads(_read("certfr_avis_chrome.json")))
         if "CERTFR-2026-ALE-001" in url:
             return httpx.Response(200, json=json.loads(_read("certfr_alerte_chrome.json")))
+        if "cveawg.mitre.org/api/cve/" in url:
+            return httpx.Response(
+                200,
+                json={
+                    "containers": {
+                        "adp": [{"metrics": [{"cvssV3_1": {"baseScore": 8.8, "baseSeverity": "HIGH"}}]}]
+                    }
+                },
+            )
         if "chromereleases.googleblog.com" in url:
             return httpx.Response(200, text=_read("chrome_feed.xml"))
         return httpx.Response(500, text="inattendu " + url)
@@ -204,6 +217,8 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
         assert list(certfr) == ["CVE-2026-9999"]
         assert certfr["CVE-2026-9999"]["products"] == ["chrome"]
         assert certfr["CVE-2026-9999"]["alert"] is True
+        assert certfr["CVE-2026-9999"]["cvss"] == 8.8
+        assert certfr["CVE-2026-9999"]["severite"] == "critique"
         assert not any("CERTFR-2024" in url or "AVI-0001" in url or "AVI-0002" in url for url in seen)
         assert any("ALE-001" in url for url in seen)
         assert not any("firefox" in url or "api.msrc" in url or "endoflife" in url for url in seen)

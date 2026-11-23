@@ -17,6 +17,7 @@ from app.sources.catalog import (
     CERTFR_ALERTE_URL,
     CERTFR_AVIS_URL,
     CERTFR_SITE,
+    CVE_RECORD_URL,
     ENDOLIFE_URL,
     FEEDS,
     GITHUB_RELEASE,
@@ -32,7 +33,17 @@ from app.sources.catalog import (
 )
 from app.sources.http import get_with_retries, make_client
 from app.sources.limiter import RateLimiter
-from app.sources.parsers import parse_certfr, parse_endoflife, parse_feed, parse_github_release, parse_kev, parse_msrc, parse_nvd
+from app.sources.parsers import (
+    parse_certfr,
+    parse_cve_score,
+    parse_endoflife,
+    parse_feed,
+    parse_github_release,
+    parse_kev,
+    parse_msrc,
+    parse_nvd,
+    severity_name,
+)
 from app.sources.winget import update_winget
 from app.timeutils import utcnow
 
@@ -524,9 +535,33 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         cve = _newest_cve(parsed["cves"])
         if not owned or cve is None:
             continue
+        score = _cve_score(client, cve["id"], sleep)
+        parsed["cvss"] = score.get("cvss")
+        parsed["severite"] = severity_name(parsed["cvss"], alert=parsed["alert"], cvss_label=score.get("cvss_label") or "")
         _remember_certfr(cves, parsed, cve["id"], owned)
     put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
     return len(cves)
+
+
+def _cve_score(client, cve_id: str, sleep) -> dict:
+    """Lit la note CVSS. Une fiche inaccessible ne bloque pas le bulletin."""
+    if not re.fullmatch(r"CVE-\d{4}-\d+", cve_id):
+        return {}
+    try:
+        response = get_with_retries(
+            client,
+            CVE_RECORD_URL.format(cve=cve_id),
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            sleep=sleep,
+        )
+    except Exception:
+        return {}
+    if response.status_code >= 400:
+        return {}
+    try:
+        return parse_cve_score(response.json())
+    except Exception:
+        return {}
 
 
 def _certfr_index(client, url: str, sleep) -> list:
@@ -679,6 +714,8 @@ def _remember_certfr(cves: dict, parsed: dict, cve_id: str, slugs: list[str]) ->
         "title": title,
         "summary": summary,
         "alert": alert,
+        "cvss": parsed.get("cvss"),
+        "severite": parsed.get("severite") or "",
         "reference": reference,
         "revised": parsed.get("revised") or "",
         "products": products,

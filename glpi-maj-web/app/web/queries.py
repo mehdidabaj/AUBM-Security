@@ -246,6 +246,8 @@ def software_rows(db: Session) -> list[dict]:
                 up += 1
         from app.actions.engine import _cves_for
 
+        cves = _cves_for(db, slug)
+        faille = cves[0] if cves else {}
         rows.append(
             {
                 "slug": slug,
@@ -254,7 +256,9 @@ def software_rows(db: Session) -> list[dict]:
                 "publiee": (target or {}).get("version") or "—",
                 "a_jour": up,
                 "en_retard": behind,
-                "cves": _cves_for(db, slug),
+                "cves": cves,
+                "severite": faille.get("severite") or "",
+                "cvss": faille.get("cvss"),
             }
         )
     return rows

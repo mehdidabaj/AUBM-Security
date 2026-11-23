@@ -9,7 +9,7 @@
   {% endif %}
   <table>
     <thead>
-      <tr><th>Logiciel</th><th>Version la plus courante</th><th>Dernière publiée</th><th>À jour</th><th>En retard</th><th>CVE</th></tr>
+      <tr><th>Logiciel</th><th>Version la plus courante</th><th>Dernière publiée</th><th>À jour</th><th>En retard</th><th>CVE</th><th>Sévérité</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -24,9 +24,14 @@
           <span>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.kev %} KEV{% endif %}{% if cve.certfr %} {% if cve.certfr_url and cve.certfr_url != cve.url %}<a href="{{ cve.certfr_url }}" target="_blank" rel="noopener">CERT-FR{% if cve.certfr_alert %} alerte{% endif %}</a>{% else %}CERT-FR{% if cve.certfr_alert %} alerte{% endif %}{% endif %}{% endif %}</span>
           {% else %}—{% endfor %}
         </td>
+        <td>
+          {% if row.severite %}
+          <span class="badge {{ row.severite }}">{{ {"critique": "Critique", "important": "Important", "moyenne": "Moyenne", "faible": "Faible"}[row.severite] }}</span>{% if row.cvss is not none %} {{ row.cvss }}{% endif %}
+          {% else %}—{% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6">{% if en_cours %}Aucun logiciel reconnu pour l'instant. Ils apparaissent pendant la lecture des installations.{% else %}Aucun logiciel reconnu.{% endif %}</td></tr>
+      <tr><td colspan="7">{% if en_cours %}Aucun logiciel reconnu pour l'instant. Ils apparaissent pendant la lecture des installations.{% else %}Aucun logiciel reconnu.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

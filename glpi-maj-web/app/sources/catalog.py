@@ -11,6 +11,7 @@ KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulner
 CERTFR_AVIS_URL = "https://www.cert.cyber.gouv.fr/avis/json/"
 CERTFR_ALERTE_URL = "https://www.cert.cyber.gouv.fr/alerte/json/"
 CERTFR_SITE = "https://www.cert.cyber.gouv.fr"
+CVE_RECORD_URL = "https://cveawg.mitre.org/api/cve/{cve}"
 MSRC_UPDATES = "https://api.msrc.microsoft.com/cvrf/v3.0/updates"
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 ENDOLIFE_URL = "https://endoflife.date/api/{product}.json"

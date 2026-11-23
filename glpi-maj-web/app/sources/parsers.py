@@ -148,6 +148,54 @@ def parse_kev(payload: dict) -> dict:
     return {"catalog_version": payload.get("catalogVersion") or "", "cves": cves}
 
 
+_CVSS_KEYS = ("cvssV4_0", "cvssV3_1", "cvssV31", "cvssV3_0", "cvssV30", "cvssV2_0")
+_SEVERITY_FROM_CVSS = {"CRITICAL": "critique", "HIGH": "important", "MEDIUM": "moyenne", "LOW": "faible"}
+
+
+def parse_cve_score(payload: dict) -> dict:
+    """Note CVSS la plus haute d'une fiche CVE 5."""
+    containers = payload.get("containers") if isinstance(payload, dict) else None
+    blocks: list[dict] = []
+    if isinstance(containers, dict):
+        cna = containers.get("cna")
+        if isinstance(cna, dict):
+            blocks.append(cna)
+        for item in containers.get("adp") or []:
+            if isinstance(item, dict):
+                blocks.append(item)
+    best: float | None = None
+    label = ""
+    for block in blocks:
+        for metric in block.get("metrics") or []:
+            if not isinstance(metric, dict):
+                continue
+            for key in _CVSS_KEYS:
+                data = metric.get(key)
+                score = data.get("baseScore") if isinstance(data, dict) else None
+                if isinstance(score, (int, float)) and (best is None or float(score) > best):
+                    best = float(score)
+                    label = str(data.get("baseSeverity") or "")
+    return {"cvss": best, "cvss_label": label}
+
+
+def severity_name(cvss: object, *, alert: bool = False, cvss_label: str = "") -> str:
+    """Libellé interne : critique, important, moyenne ou faible."""
+    if alert:
+        return "critique"
+    mapped = _SEVERITY_FROM_CVSS.get(str(cvss_label or "").upper())
+    if mapped:
+        return mapped
+    if not isinstance(cvss, (int, float)):
+        return ""
+    if cvss >= 9:
+        return "critique"
+    if cvss >= 7:
+        return "important"
+    if cvss >= 4:
+        return "moyenne"
+    return "faible"
+
+
 def parse_certfr(payload: dict, *, kind: str) -> dict:
     reference = str(payload.get("reference") or "").strip()
     alert = kind == "alerte" or "-ALE-" in reference

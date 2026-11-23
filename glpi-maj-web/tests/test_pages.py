@@ -366,3 +366,37 @@ def test_association_manuelle(client, app):
     unknown = client.get("/logiciels/a-associer")
     assert unknown.status_code == 200
     assert "Logiciels à associer" in unknown.text
+
+
+def test_logiciels_affiche_la_severite_de_la_faille(client, app, admin):
+    from app.sources.cache import put_cache
+
+    login(client, "admin", "motdepasse-admin")
+    db = app.state.SessionLocal()
+    try:
+        put_cache(
+            db,
+            "certfr",
+            "catalog",
+            {
+                "cves": {
+                    "CVE-2026-9999": {
+                        "id": "CVE-2026-9999",
+                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
+                        "alert": True,
+                        "cvss": 8.8,
+                        "severite": "critique",
+                        "products": ["chrome"],
+                    }
+                }
+            },
+            origin="live",
+        )
+    finally:
+        db.close()
+    page = client.get("/logiciels")
+    assert page.status_code == 200
+    assert "Sévérité" in page.text
+    assert 'class="badge critique"' in page.text
+    assert "Critique" in page.text
+    assert "8.8" in page.text

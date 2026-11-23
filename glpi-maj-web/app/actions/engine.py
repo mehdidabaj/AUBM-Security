@@ -22,6 +22,7 @@ from app.models.inventory import CheckRun, ComputerRecord
 from app.sources.cache import is_end_of_life, payload_of, version_target
 from app.sources.cache import get_cache
 from app.sources.catalog import PRODUCTS
+from app.sources.parsers import severity_name
 from app.timeutils import utcnow
 
 WINDOWS_GUIDE = "https://learn.microsoft.com/windows/release-health/windows11-release-information"
@@ -338,15 +339,18 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
     for cve_id, row in certfr.items():
         if not isinstance(row, dict) or slug not in (row.get("products") or []):
             continue
+        alert = bool(row.get("alert"))
+        cvss = row.get("cvss")
         found.append(
             {
                 "id": cve_id,
-                "cvss": None,
+                "cvss": cvss if isinstance(cvss, (int, float)) else None,
                 "summary": row.get("summary") or row.get("title") or "",
                 "url": row.get("url") or "",
                 "certfr": True,
-                "certfr_alert": bool(row.get("alert")),
+                "certfr_alert": alert,
                 "certfr_url": row.get("url") or "",
+                "severite": row.get("severite") or severity_name(cvss, alert=alert),
             }
         )
     return found

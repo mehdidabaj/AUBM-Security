@@ -137,6 +137,7 @@ button.linkish, .linkish {
 }
 .badge.critique { background: var(--critique); }
 .badge.important { background: var(--important); }
+.badge.moyenne { background: #a16207; }
 .badge.faible { background: var(--faible); }
 .badge.ok, .badge.a-jour { background: var(--ok); }
 
