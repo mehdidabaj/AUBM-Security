@@ -50,7 +50,7 @@ def _computers(db: Session, run: CheckRun) -> list[ComputerRecord]:
 def computer_views(db: Session, settings: Settings, params: dict) -> dict:
     run = visible_run(db)
     if run is None:
-        return {"run": None, "en_cours": False, "lus": 0, "rows": [], "services": [], "lieux": [], "logiciels": []}
+        return {"run": None, "en_cours": False, "lus": 0, "installations": 0, "rows": [], "services": [], "lieux": [], "logiciels": []}
     grouped = actions_by_computer(db, run)
     count_low = include_low(db)
     en_cours = run.status == "running"
@@ -59,8 +59,10 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
     lieux = set()
     logiciels = set()
     lus = 0
+    installations = 0
     for computer in _computers(db, run):
         lus += 1
+        installations += len(computer.software)
         actions = grouped.get(computer.glpi_id, [])
         if en_cours and not actions:
             priority = "lecture"
@@ -118,6 +120,7 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
         "run": run,
         "en_cours": en_cours,
         "lus": lus,
+        "installations": installations,
         "rows": rows,
         "services": sorted(item for item in services if item),
         "lieux": sorted(item for item in lieux if item),
@@ -255,6 +258,27 @@ def software_rows(db: Session) -> list[dict]:
             }
         )
     return rows
+
+
+def unknown_software(db: Session) -> list[dict]:
+    """Logiciels lus qui ne correspondent à aucun produit suivi."""
+    from app.actions.mapping import resolve_slug
+
+    run = visible_run(db)
+    if run is None:
+        return []
+    counts: Counter[str] = Counter()
+    for computer in _computers(db, run):
+        seen: set[str] = set()
+        for software in computer.software:
+            slug = resolve_slug(db, software.name)
+            if slug and parse_version(software.version):
+                continue
+            name = (software.name or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                counts[name] += 1
+    return [{"nom": name, "postes": count} for name, count in counts.most_common()]
 
 
 def journal(db: Session, limit: int = 30) -> list[SourceRun]:

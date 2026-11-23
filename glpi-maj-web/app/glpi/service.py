@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.actions.engine import compute_computers, priority_of
+from app.actions.engine import priority_of
 from app.actions.rules import SEVERITY_RANK
 from app.config import Settings
 from app.glpi.client import GlpiClient, _software_item, assemble
@@ -22,7 +22,9 @@ from app.timeutils import utcnow
 
 logger = logging.getLogger(__name__)
 _VERIFICATION_LOCK = threading.Lock()
-_STALE_RUN = timedelta(hours=2)
+_STALE_RUN = timedelta(hours=6)
+_HISTORY_KEEP = 10
+_METER_STEPS = {"ordinateurs", "postes", "versions", "logiciels", "installations"}
 
 
 def latest_successful(db: Session) -> CheckRun | None:
@@ -30,11 +32,16 @@ def latest_successful(db: Session) -> CheckRun | None:
 
 
 def visible_run(db: Session) -> CheckRun | None:
-    """Vérification affichée : celle en cours s'il y en a une, sinon la dernière réussie."""
+    """Vérification affichée : celle en cours, sinon la dernière réussie, sinon une annulation partielle."""
     current = db.scalar(select(CheckRun).order_by(CheckRun.id.desc()))
     if current is not None and current.status == "running" and current.finished_at is None:
         return current
-    return latest_successful(db)
+    success = latest_successful(db)
+    if success is not None:
+        return success
+    if current is not None and current.status == "annulee":
+        return current
+    return None
 
 
 def build_summary(previous: CheckRun | None, computers: list[ComputerItem]) -> dict:
@@ -60,6 +67,49 @@ def collection_percent(index: int, total_steps: int, read: int, total: int | Non
     else:
         fraction = min(1.0, read / total)
     return min(95, int(index * part + fraction * part))
+
+
+class VerificationCancelled(Exception):
+    """La vérification a été arrêtée depuis l'interface."""
+
+
+class ProgressMeter:
+    """Pourcentage pondéré par le nombre de lignes annoncées, sans retour en arrière."""
+
+    def __init__(self, planned: int) -> None:
+        self.planned = max(planned, 1)
+        self.order: list[str] = []
+        self.totals: dict[str, int] = {}
+        self.reads: dict[str, int] = {}
+        self.floor = 0
+
+    def update(self, step: str, read: int, total: int | None) -> int:
+        if step not in self.reads:
+            self.order.append(step)
+        self.reads[step] = max(0, read)
+        if total is not None and total >= 0:
+            self.totals[step] = total
+        known = [value for value in self.totals.values() if value > 0]
+        average = (sum(known) / len(known)) if known else 1.0
+        done = 0.0
+        weight = 0.0
+        for name in self.order:
+            step_total = self.totals.get(name, 0)
+            step_read = self.reads.get(name, 0)
+            if step_total > 0:
+                step_weight = float(step_total)
+                fraction = min(1.0, step_read / step_total)
+            else:
+                step_weight = average
+                fraction = 1.0 if step_read > 0 else 0.0
+            weight += step_weight
+            done += step_weight * fraction
+        weight += max(0, self.planned - len(self.order)) * average
+        percent = 0 if weight <= 0 else min(95, int(95 * done / weight))
+        if percent < self.floor:
+            return self.floor
+        self.floor = percent
+        return percent
 
 
 def _postes(count: int) -> str:
@@ -210,6 +260,8 @@ def save_check(
 
         compute_check(db, run, previous)
         db.refresh(run)
+    prune_history(db)
+    db.refresh(run)
     return run
 
 
@@ -250,9 +302,15 @@ def noter_page(db: Session, run: CheckRun, live: _LiveCatalog, step: str, chunk:
 def _memoriser_postes(db: Session, run: CheckRun, items: list[ComputerItem], *, details: bool) -> None:
     if not items:
         return
+    page_ids = [item.glpi_id for item in items]
     known = {
         row.glpi_id: row
-        for row in db.scalars(select(ComputerRecord).where(ComputerRecord.check_run_id == run.id))
+        for row in db.scalars(
+            select(ComputerRecord).where(
+                ComputerRecord.check_run_id == run.id,
+                ComputerRecord.glpi_id.in_(page_ids),
+            )
+        )
     }
     for item in items:
         row = known.get(item.glpi_id)
@@ -281,8 +339,10 @@ def _memoriser_postes(db: Session, run: CheckRun, items: list[ComputerItem], *, 
         if details:
             db.flush()
             _remplacer_details(db, row, item)
-    run.computer_count = len(known)
     db.flush()
+    run.computer_count = int(
+        db.scalar(select(func.count()).select_from(ComputerRecord).where(ComputerRecord.check_run_id == run.id)) or 0
+    )
 
 
 def _remplacer_details(db: Session, row: ComputerRecord, item: ComputerItem) -> None:
@@ -371,7 +431,6 @@ def _appliquer_installations(db: Session, run: CheckRun, live: _LiveCatalog, chu
                 )
             )
     db.flush()
-    compute_computers(db, run, set(pending))
 
 
 def _appliquer_agents(db: Session, run: CheckRun, live: _LiveCatalog, chunk: list) -> None:
@@ -390,7 +449,6 @@ def _appliquer_agents(db: Session, run: CheckRun, live: _LiveCatalog, chunk: lis
             itemtype=normalize_name(row.get("itemtype") or "Agent") or "Agent",
         )
     found = _records(db, run, live, set(by_item))
-    touched: set[int] = set()
     for glpi_id, agent in by_item.items():
         record = found.get(glpi_id)
         if record is None:
@@ -406,9 +464,119 @@ def _appliquer_agents(db: Session, run: CheckRun, live: _LiveCatalog, chunk: lis
                 itemtype=agent.itemtype,
             )
         )
-        touched.add(glpi_id)
     db.flush()
-    compute_computers(db, run, touched)
+
+
+def _annulation_demandee(db: Session, run_id: int) -> bool:
+    value = db.scalar(select(CheckRun.cancel_requested).where(CheckRun.id == run_id))
+    return bool(value)
+
+
+def finalize_run(db: Session, run: CheckRun) -> CheckRun:
+    """Clôture la vérification déjà écrite, sans la réécrire."""
+    now = utcnow()
+    previous = latest_successful(db)
+    records = list(db.scalars(select(ComputerRecord).where(ComputerRecord.check_run_id == run.id)))
+    current_ids = {record.glpi_id for record in records}
+    previous_ids = {record.glpi_id for record in previous.computers} if previous is not None else set()
+    run.status = "success"
+    run.finished_at = now
+    run.computer_count = len(records)
+    run.progress_current = 100
+    run.progress_total = 100
+    run.message = f"Collecte terminée : {_postes(len(records))}."
+    run.summary_json = json.dumps(
+        {
+            "postes_ajoutes": sorted(current_ids - previous_ids),
+            "postes_retires": sorted(previous_ids - current_ids),
+            "postes_corriges": [],
+            "nouvelles_actions": [],
+        },
+        ensure_ascii=False,
+    )
+    db.commit()
+    db.refresh(run)
+    from app.actions.engine import compute_check
+
+    compute_check(db, run, previous)
+    prune_history(db)
+    db.refresh(run)
+    return run
+
+
+def prune_history(db: Session, keep: int | None = None) -> None:
+    """Ne conserve que les dernières vérifications terminées."""
+    if keep is None:
+        from app.settings_store import get_setting
+
+        try:
+            keep = int(get_setting(db, "history_limit", _HISTORY_KEEP) or _HISTORY_KEEP)
+        except (TypeError, ValueError):
+            keep = _HISTORY_KEEP
+    keep = max(1, keep)
+    finished = list(db.scalars(select(CheckRun).where(CheckRun.status != "running").order_by(CheckRun.id.desc())))
+    for old in finished[keep:]:
+        _delete_run(db, old.id)
+    db.commit()
+
+
+def _delete_run(db: Session, run_id: int) -> None:
+    computer_ids = list(db.scalars(select(ComputerRecord.id).where(ComputerRecord.check_run_id == run_id)))
+    db.execute(delete(ComputedAction).where(ComputedAction.check_run_id == run_id))
+    if computer_ids:
+        db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id.in_(computer_ids)))
+        db.execute(delete(AgentRecord).where(AgentRecord.computer_id.in_(computer_ids)))
+        db.execute(delete(ComputerRecord).where(ComputerRecord.id.in_(computer_ids)))
+    db.execute(delete(CheckRun).where(CheckRun.id == run_id))
+
+
+def abandon_running(db: Session) -> int:
+    """Un redémarrage tue le fil de collecte : ces vérifications ne tournent plus."""
+    rows = list(db.scalars(select(CheckRun).where(CheckRun.status == "running")))
+    for run in rows:
+        run.status = "error"
+        run.error = "La vérification a été interrompue par un redémarrage."
+        run.message = "La vérification a été interrompue par un redémarrage."
+        run.finished_at = utcnow()
+    if rows:
+        db.commit()
+    return len(rows)
+
+
+def cancel_verification(db: Session) -> CheckRun | None:
+    run = db.scalar(select(CheckRun).where(CheckRun.status == "running").order_by(CheckRun.id.desc()))
+    if run is None:
+        return None
+    run.cancel_requested = 1
+    run.status = "annulee"
+    run.finished_at = utcnow()
+    run.message = "Vérification annulée."
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def _cloturer_annulation(db: Session, run_id: int) -> CheckRun | None:
+    db.rollback()
+    current = db.get(CheckRun, run_id)
+    if current is None:
+        return None
+    current.cancel_requested = 1
+    current.status = "annulee"
+    current.finished_at = current.finished_at or utcnow()
+    current.message = "Vérification annulée."
+    db.commit()
+    if current.computer_count:
+        from app.actions.engine import compute_check
+
+        try:
+            compute_check(db, current, latest_successful(db))
+        except Exception:
+            logger.exception("Le calcul après annulation a échoué")
+            db.rollback()
+    prune_history(db)
+    db.refresh(current)
+    return current
 
 
 def run_verification(
@@ -430,21 +598,31 @@ def run_verification(
             computers = load_catalog().current
             total = max(len(computers), 1)
             for index, computer in enumerate(computers, start=1):
+                if _annulation_demandee(db, run.id):
+                    raise VerificationCancelled()
                 _memoriser_postes(db, run, [computer], details=True)
-                compute_computers(db, run, {computer.glpi_id})
                 db.commit()
                 _publish(db, run, min(95, int(index * 95 / total)), f"Lecture du parc d'exemple : {index} / {len(computers)}")
         else:
             live = _LiveCatalog()
+            meter = ProgressMeter(5)
 
             def on_progress(index: int, total_steps: int, step: str, read: int, total: int | None, chunk=None) -> None:
-                pourcent = collection_percent(index, total_steps, read, total)
-                detail = str(read) if total is None else f"{read} / {total}"
+                if _annulation_demandee(db, run.id):
+                    raise VerificationCancelled()
                 noter_page(db, run, live, step, chunk or [])
+                if step not in _METER_STEPS:
+                    return
+                pourcent = meter.update(step, read, total)
+                detail = str(read) if total is None else f"{read} / {total}"
                 _publish(db, run, pourcent, f"Lecture des {step} : {detail}")
 
             with GlpiClient(settings, http=http) as client:
-                computers = client.collect(on_progress=on_progress)
+                client.collect(on_progress=on_progress)
+        if _annulation_demandee(db, run.id):
+            raise VerificationCancelled()
+    except VerificationCancelled:
+        return _cloturer_annulation(db, run.id) or run
     except GlpiError as exc:
         save_check(db, [], run.origin, error=exc.message, run=run)
         raise
@@ -452,7 +630,7 @@ def run_verification(
         logger.exception("La lecture GLPI a échoué")
         save_check(db, [], run.origin, error="La lecture GLPI a échoué.", run=run)
         raise
-    return save_check(db, computers, run.origin, run=run)
+    return finalize_run(db, run)
 
 
 def _spawn_verification(app, run_id: int) -> None:
@@ -500,17 +678,48 @@ _RESULTATS = {
 }
 
 
-def verification_view(db: Session, *, suivre: bool = False, settings: Settings | None = None) -> dict:
+def inventory_counts(db: Session, run: CheckRun | None) -> tuple[int, int]:
+    if run is None:
+        return 0, 0
+    lus = int(
+        db.scalar(select(func.count()).select_from(ComputerRecord).where(ComputerRecord.check_run_id == run.id)) or 0
+    )
+    logiciels = int(
+        db.scalar(
+            select(func.count())
+            .select_from(SoftwareInstall)
+            .join(ComputerRecord, SoftwareInstall.computer_id == ComputerRecord.id)
+            .where(ComputerRecord.check_run_id == run.id)
+        )
+        or 0
+    )
+    return lus, logiciels
+
+
+def verification_view(
+    db: Session,
+    *,
+    suivre: bool = False,
+    settings: Settings | None = None,
+    avec_postes: bool = True,
+) -> dict:
     db.expire_all()
     run = db.scalar(select(CheckRun).order_by(CheckRun.id.desc()))
     if run is None:
         return _progress_idle()
     if run.status == "running":
         run = _expire_if_stale(db, run)
-    visible = run.status in {"running", "error"} or (
+    visible = run.status in {"running", "error", "annulee"} or (
         suivre and run.finished_at is not None and run.finished_at >= utcnow() - timedelta(minutes=2)
     )
-    postes, lus = _postes_deja_lus(db, run, settings) if visible else ([], 0)
+    if visible and avec_postes:
+        postes, lus = _postes_deja_lus(db, run, settings)
+        logiciels = inventory_counts(db, run)[1]
+    elif visible:
+        postes = []
+        lus, logiciels = inventory_counts(db, run)
+    else:
+        postes, lus, logiciels = [], 0, 0
     if run.status == "running":
         return _vue(
             en_cours=True,
@@ -520,6 +729,8 @@ def verification_view(db: Session, *, suivre: bool = False, settings: Settings |
             erreur=False,
             postes=postes,
             lus=lus,
+            logiciels=logiciels,
+            etat="cours",
         )
     recent = run.finished_at is not None and run.finished_at >= utcnow() - timedelta(minutes=2)
     if suivre and recent and run.status == "success":
@@ -531,8 +742,10 @@ def verification_view(db: Session, *, suivre: bool = False, settings: Settings |
             erreur=False,
             postes=postes,
             lus=lus,
+            logiciels=logiciels,
+            etat="fini",
         )
-    if suivre and recent and run.status == "error":
+    if suivre and recent and run.status in {"error", "annulee"}:
         return _vue(
             en_cours=False,
             pourcent=min(100, int(run.progress_current or 0)),
@@ -541,6 +754,8 @@ def verification_view(db: Session, *, suivre: bool = False, settings: Settings |
             erreur=True,
             postes=postes,
             lus=lus,
+            logiciels=logiciels,
+            etat="erreur",
         )
     return _progress_idle()
 
@@ -590,7 +805,18 @@ def _postes_deja_lus(db: Session, run: CheckRun, settings: Settings | None) -> t
     return postes, total
 
 
-def _vue(*, en_cours: bool, pourcent: int, texte: str, recharger: bool, erreur: bool, postes: list, lus: int) -> dict:
+def _vue(
+    *,
+    en_cours: bool,
+    pourcent: int,
+    texte: str,
+    recharger: bool,
+    erreur: bool,
+    postes: list,
+    lus: int,
+    logiciels: int = 0,
+    etat: str = "idle",
+) -> dict:
     return {
         "en_cours": en_cours,
         "pourcent": pourcent,
@@ -599,11 +825,13 @@ def _vue(*, en_cours: bool, pourcent: int, texte: str, recharger: bool, erreur: 
         "erreur": erreur,
         "postes": postes,
         "lus": lus,
+        "logiciels": logiciels,
+        "etat": etat,
     }
 
 
 def _progress_idle() -> dict:
-    return _vue(en_cours=False, pourcent=0, texte="", recharger=False, erreur=False, postes=[], lus=0)
+    return _vue(en_cours=False, pourcent=0, texte="", recharger=False, erreur=False, postes=[], lus=0, logiciels=0, etat="idle")
 
 
 def connection_report(settings: Settings, http: httpx.Client | None = None) -> dict:

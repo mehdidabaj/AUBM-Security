@@ -19,6 +19,12 @@ MESSAGES = {
         "Le profil de la session API doit pouvoir lire les ordinateurs et les agents. "
         "Sur le compte api-maj, choisissez Super-Admin comme profil par défaut."
     ),
+    "ERROR_SESSION_TOKEN_INVALID": (
+        "La session GLPI a expiré (ERROR_SESSION_TOKEN_INVALID). Relancez la vérification."
+    ),
+    "ERROR_SESSION_TOKEN_MISSING": (
+        "Session GLPI absente (ERROR_SESSION_TOKEN_MISSING). Relancez la vérification."
+    ),
 }
 
 

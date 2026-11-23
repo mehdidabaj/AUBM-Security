@@ -182,7 +182,13 @@ def test_progression_de_la_verification(client, app, admin):
     assert 'role="progressbar"' in page.text
     fragment = client.get("/verification/progression")
     assert "40 %" in fragment.text
-    assert "hx-get=\"/verification/progression\"" in fragment.text
+    assert "PC VISIBLE" in fragment.text
+    assert 'hx-get="/verification/progression?lus=' in fragment.text
+    assert "Arrêter la vérification" in page.text
+    leger = client.get("/verification/progression?lus=1&logiciels=0&etat=cours")
+    assert leger.status_code == 200
+    assert "40 %" in leger.text
+    assert "PC VISIBLE" not in leger.text
 
     db = app.state.SessionLocal()
     try:
@@ -252,6 +258,7 @@ def test_postes_et_logiciels_suivent_la_collecte(client, app, admin):
         db.add(computer)
         db.flush()
         db.add(SoftwareInstall(computer_id=computer.id, name="Google Chrome", publisher="Google", version="120.0.1"))
+        db.add(SoftwareInstall(computer_id=computer.id, name="Bidule Interne", publisher="Maison", version="1.0"))
         db.commit()
     finally:
         db.close()
@@ -264,10 +271,84 @@ def test_postes_et_logiciels_suivent_la_collecte(client, app, admin):
     assert "PC-COMPTA-01" not in postes.text
     assert client.get("/postes/77").status_code == 200
 
+    assert client.get("/postes?live=1&lus=1&soft=2&etat=cours").status_code == 204
+
     logiciels = client.get("/logiciels")
     assert "Google Chrome" in logiciels.text
+    assert "Bidule Interne" in logiciels.text
     assert 'id="logiciels-live"' in logiciels.text
     assert 'hx-trigger="every 2s"' in logiciels.text
+    assert client.get("/logiciels?live=1&lus=1&soft=2&etat=cours").status_code == 204
+
+
+def test_annulation_et_historique(client, app, admin):
+    from sqlalchemy import func, select
+
+    from app.glpi.service import prune_history
+    from app.models.inventory import CheckRun
+    from app.timeutils import utcnow
+    from tests.conftest import csrf_from, login
+
+    login(client, "admin", "motdepasse-admin")
+    db = app.state.SessionLocal()
+    try:
+        db.add(
+            CheckRun(
+                started_at=utcnow(),
+                status="running",
+                origin="glpi",
+                computer_count=0,
+                summary_json="{}",
+                message="Lecture",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    page = client.get("/")
+    stopped = client.post(
+        "/verification/annuler",
+        data={"csrf_token": csrf_from(page.text)},
+        headers={"HX-Request": "true"},
+    )
+    assert stopped.status_code == 200
+    assert "Vérification annulée" in stopped.text
+    db = app.state.SessionLocal()
+    try:
+        status = db.scalar(select(CheckRun.status).order_by(CheckRun.id.desc()))
+        assert status == "annulee"
+        for _ in range(12):
+            db.add(
+                CheckRun(
+                    started_at=utcnow(),
+                    finished_at=utcnow(),
+                    status="success",
+                    origin="glpi",
+                    computer_count=0,
+                    summary_json="{}",
+                )
+            )
+        db.commit()
+        prune_history(db, keep=10)
+        finished = db.scalar(select(func.count()).select_from(CheckRun).where(CheckRun.status != "running"))
+        assert finished == 10
+    finally:
+        db.close()
+
+
+def test_erreur_html_est_echappee(app):
+    from fastapi import HTTPException
+    from fastapi.testclient import TestClient
+
+    @app.get("/_erreur_html")
+    def _boom():
+        raise HTTPException(status_code=400, detail="<script>alert(1)</script>")
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/_erreur_html", headers={"accept": "text/html"})
+    assert response.status_code == 400
+    assert "<script>" not in response.text
+    assert "&lt;script&gt;" in response.text
 
 
 def test_association_manuelle(client, app):

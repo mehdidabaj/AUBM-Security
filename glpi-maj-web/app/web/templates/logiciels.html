@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Logiciels suivis</h1>
-  <div id="logiciels-live"{% if en_cours %} hx-get="/logiciels" hx-trigger="every 2s" hx-select="#logiciels-live" hx-swap="outerHTML"{% endif %}>
+  <div id="logiciels-live"{% if en_cours %} hx-get="/logiciels?live=1&amp;lus={{ postes_lus }}&amp;soft={{ installations }}&amp;etat=cours" hx-trigger="every 2s" hx-select="#logiciels-live" hx-swap="outerHTML"{% endif %}>
   {% if en_cours %}
   <p class="muted">Collecte en cours : {{ postes_lus }} poste(s) lu(s). Ce tableau se met à jour tout seul, dès que les logiciels d'un poste sont lus.</p>
   {% endif %}
@@ -27,6 +27,22 @@
       </tr>
       {% else %}
       <tr><td colspan="6">{% if en_cours %}Aucun logiciel reconnu pour l'instant. Ils apparaissent pendant la lecture des installations.{% else %}Aucun logiciel reconnu.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2>Logiciels relevés non associés</h2>
+  <p class="muted">Ces noms sont lus dans GLPI. Associez-les à un produit suivi pour qu'ils entrent dans le calcul.</p>
+  <table>
+    <thead><tr><th>Nom dans GLPI</th><th>Postes</th><th></th></tr></thead>
+    <tbody>
+      {% for item in inconnus %}
+      <tr>
+        <td>{{ item.nom }}</td>
+        <td>{{ item.postes }}</td>
+        <td><a href="/logiciels/a-associer">Associer</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">{% if en_cours %}Aucun logiciel non associé pour l'instant.{% else %}Tous les logiciels lus sont associés, ou aucun logiciel n'a encore été lu.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

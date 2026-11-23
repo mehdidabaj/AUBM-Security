@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -27,7 +28,7 @@ def test_extraction_du_build_windows():
     assert extract_build("") == ""
 
 
-def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict | None = None):
+def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict | None = None, cap: int | None = None):
     resources = {
         "Computer": payload["computers"],
         "Item_OperatingSystem": payload["operating_systems"],
@@ -37,10 +38,38 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
         "Agent": payload["agents"],
     }
 
+    def rows_of(request: httpx.Request) -> tuple[str, list]:
+        path = request.url.path.rstrip("/")
+        name = path.rsplit("/", 1)[-1]
+        linked = re.search(r"/Computer/(\d+)/(Item_OperatingSystem|Item_SoftwareVersion|Agent)$", path)
+        if linked:
+            computer_id = int(linked.group(1))
+            kind = linked.group(2)
+            rows = [row for row in resources[kind] if int(row.get("items_id") or 0) == computer_id]
+            return kind, rows
+        if name == "getMultipleItems":
+            grouped: dict[str, dict[str, str]] = {}
+            for key, value in request.url.params.multi_items():
+                match = re.match(r"items\[(\d+)\]\[(itemtype|items_id)\]", key)
+                if match:
+                    grouped.setdefault(match.group(1), {})[match.group(2)] = value
+            kind = ""
+            wanted: list[int] = []
+            for item in grouped.values():
+                kind = item.get("itemtype", kind)
+                wanted.append(int(item["items_id"]))
+            sink.setdefault("fetched", {}).setdefault(kind, []).extend(wanted)
+            by_id = {int(row["id"]): row for row in resources[kind]}
+            return kind, [by_id[item_id] for item_id in wanted if item_id in by_id]
+        sink.setdefault("listed", []).append(name)
+        return name, resources[name]
+
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path.rstrip("/").rsplit("/", 1)[-1]
         sink["user_agent"] = request.headers.get("user-agent")
+        sink["inits"] = sink.get("inits", 0)
         if path == "initSession":
+            sink["inits"] += 1
             sink["app_token"] = request.headers.get("app-token")
             sink["authorization"] = request.headers.get("authorization")
             if fail_on and fail_on.get("init"):
@@ -50,14 +79,22 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
             sink["killed"] = sink.get("killed", 0) + 1
             sink["session_token"] = request.headers.get("session-token")
             return httpx.Response(200, json={"ok": True})
-        if fail_on and fail_on.get("resource") == path:
+        if fail_on and fail_on.get("session_once") and not sink.get("session_failed"):
+            sink["session_failed"] = True
+            return httpx.Response(401, json=["ERROR_SESSION_TOKEN_INVALID", "expiree"])
+        name, rows = rows_of(request)
+        if fail_on and fail_on.get("resource") == name:
             sink["pages"] = sink.get("pages", 0) + 1
             if sink["pages"] == fail_on.get("page", 1):
                 return httpx.Response(403, json=fail_on["body"])
-        rows = resources[path]
+        if name == "getMultipleItems" or path == "getMultipleItems":
+            assert request.headers.get("session-token") == "sess-1"
+            return httpx.Response(200, json=rows)
         start_text, end_text = request.url.params["range"].split("-")
         start, end = int(start_text), int(end_text)
         chunk = rows[start : end + 1]
+        if cap:
+            chunk = chunk[:cap]
         total = len(rows)
         if chunk:
             header = f"{start}-{start + len(chunk) - 1}/{total}"
@@ -83,6 +120,8 @@ def test_collecte_paginee_et_session(app):
     assert sink["user_agent"] == "glpi-maj-web/1.0"
     assert sink["killed"] == 1
     assert sink["session_token"] == "sess-1"
+    assert "SoftwareVersion" not in sink.get("listed", [])
+    assert sink["fetched"]["SoftwareVersion"] == [100, 101]
     assert [computer.glpi_id for computer in computers] == [1, 2, 3]
     first = computers[0]
     assert first.name == "PC COMPTA 01"
@@ -97,6 +136,46 @@ def test_collecte_paginee_et_session(app):
     assert computers[1].group_name == "Ressources humaines"
     assert computers[2].software == []
     assert computers[2].agent is None
+
+
+def test_les_versions_non_citees_ne_sont_pas_lues(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["software_versions"].append({"id": 999, "name": "0.0.1", "softwares_id": 10})
+    sink: dict = {}
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink, cap=1)))
+    with GlpiClient(app.state.settings, http=http, page_size=500) as client:
+        computers = client.collect()
+    assert [computer.glpi_id for computer in computers] == [1, 2, 3]
+    assert 999 not in sink["fetched"]["SoftwareVersion"]
+    assert sink["fetched"]["SoftwareVersion"] == [100, 101]
+
+
+def test_session_glpi_renouvelee(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    sink: dict = {}
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink, fail_on={"session_once": True})))
+    with GlpiClient(app.state.settings, http=http, page_size=2) as client:
+        computers = client.collect()
+    assert len(computers) == 3
+    assert sink["inits"] == 2
+    assert sink["killed"] == 1
+
+
+def test_barre_ponderee_par_le_volume():
+    from app.glpi.service import ProgressMeter
+
+    meter = ProgressMeter(3)
+    debut = meter.update("ordinateurs", 88, 88)
+    assert debut < 50
+    bloque = meter.update("versions", 0, 1000)
+    assert bloque == debut
+    milieu = meter.update("versions", 500, 1000)
+    assert milieu > debut
+    assert meter.update("versions", 1000, 1000) >= milieu
 
 
 def test_pourcentage_de_collecte():
@@ -259,6 +338,31 @@ def test_verification_glpi_simulee_historisee(app):
             http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, {}))),
         )
         assert counts == {"mode": "glpi", "ordinateurs": 3, "agents": 2}
+    finally:
+        db.close()
+
+
+def test_redemarrage_interrompt_la_verification_en_cours(app):
+    from app.glpi.service import abandon_running
+    from app.models.inventory import CheckRun
+    from app.timeutils import utcnow
+
+    db = app.state.SessionLocal()
+    try:
+        run = CheckRun(
+            started_at=utcnow(),
+            status="running",
+            origin="glpi",
+            computer_count=1,
+            summary_json="{}",
+            message="Lecture",
+        )
+        db.add(run)
+        db.commit()
+        assert abandon_running(db) == 1
+        db.refresh(run)
+        assert run.status == "error"
+        assert "redémarrage" in run.message
     finally:
         db.close()
 

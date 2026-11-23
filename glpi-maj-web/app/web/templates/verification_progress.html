@@ -1,45 +1,21 @@
-<div id="verif-lancement" class="progress"{% if progression.en_cours %} hx-get="/verification/progression" hx-trigger="every 1s" hx-swap="outerHTML"{% elif progression.recharger %} hx-get="/" hx-trigger="load delay:1s" hx-target=".content" hx-select=".content" hx-swap="outerHTML"{% endif %}>
+<div id="verif-lancement" class="progress">
   {% if role_rank[user.role] >= role_rank["technicien"] %}
   <form method="post" action="/verification">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit" hx-post="/verification" hx-target="#verif-lancement" hx-swap="outerHTML"{% if progression.en_cours %} disabled{% endif %}>Lancer une vérification</button>
   </form>
+  {% if progression.en_cours %}
+  <form method="post" action="/verification/annuler">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" hx-post="/verification/annuler" hx-target="#verif-lancement" hx-swap="outerHTML">Arrêter la vérification</button>
+  </form>
+  {% endif %}
   {% endif %}
   {% if progression.en_cours or progression.erreur or progression.recharger %}
-  <div class="progress-panel"{% if progression.en_cours %} role="progressbar" aria-valuenow="{{ progression.pourcent }}" aria-valuemin="0" aria-valuemax="100" aria-live="polite"{% endif %}>
-    {% if progression.erreur %}
-    <p class="alert">{{ progression.texte }}</p>
-    {% else %}
-    <p class="muted">Taux de collecte</p>
-    <p class="progress-percent">{{ progression.pourcent }} %</p>
-    <div class="progress-track"><span style="width: {{ progression.pourcent }}%"></span></div>
-    <p class="muted">{{ progression.texte }}</p>
-    {% endif %}
-    {% if progression.postes %}
-    <p class="muted">{{ progression.lus }} poste{% if progression.lus != 1 %}s{% endif %} déjà lu{% if progression.lus != 1 %}s{% endif %}. Les lignes se mettent à jour pendant la collecte.</p>
-    <div class="progress-results">
-      <table>
-        <thead><tr><th>Poste</th><th>Service</th><th>Système</th><th>Logiciels</th><th>Résultat</th></tr></thead>
-        <tbody>
-          {% for poste in progression.postes %}
-          <tr>
-            <td>{% if poste.lien %}<a href="{{ poste.lien }}" target="_blank" rel="noopener">{{ poste.nom }}</a>{% else %}{{ poste.nom }}{% endif %}</td>
-            <td>{{ poste.service or "—" }}</td>
-            <td>{{ poste.systeme or "—" }}</td>
-            <td>{{ poste.logiciels or "—" }}</td>
-            <td>
-              <span class="badge {{ poste.classe }}">{{ poste.resultat }}</span>
-              {% if poste.detail and poste.classe != "lecture" %}<div class="muted">{{ poste.detail }}</div>{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% if progression.lus > progression.postes|length %}
-    <p class="muted">Les {{ progression.postes|length }} postes les plus récents sont affichés.</p>
-    {% endif %}
-    {% endif %}
+  <div class="progress-panel">
+    {% set oob = false %}
+    {% include "verification_compteur.html" %}
+    {% include "verification_resultats.html" %}
   </div>
   {% endif %}
 </div>

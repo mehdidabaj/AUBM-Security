@@ -29,6 +29,23 @@ def _params(request: Request) -> dict[str, str]:
     return {key: request.query_params.get(key, "") for key in ("service", "lieu", "priorite", "a_jour", "logiciel", "q", "tri", "sens")}
 
 
+def _live_inchange(request: Request, db: Session) -> bool:
+    """Le sondage live n'a rien de nouveau à afficher."""
+    if request.query_params.get("live") != "1":
+        return False
+    lus = request.query_params.get("lus")
+    soft = request.query_params.get("soft")
+    etat = request.query_params.get("etat")
+    if lus is None or soft is None or etat is None:
+        return False
+    from app.glpi.service import inventory_counts, visible_run
+
+    run = visible_run(db)
+    courant = "cours" if run is not None and run.status == "running" else "fini"
+    comptes = inventory_counts(db, run)
+    return lus == str(comptes[0]) and soft == str(comptes[1]) and etat == courant
+
+
 def _chart(data: dict) -> dict:
     labels = [name for name, _count in data.get("par_logiciel") or []]
     values = [count for _name, count in data.get("par_logiciel") or []]
@@ -60,6 +77,8 @@ def board(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
 @router.get("/postes", response_class=HTMLResponse)
 def postes(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
+    if _live_inchange(request, db):
+        return Response(status_code=204)
     params = _params(request)
     view = computer_views(db, request.app.state.settings, params)
     if request.headers.get("hx-request") and request.query_params.get("live") != "1":
@@ -102,15 +121,21 @@ async def suivi(glpi_id: int, request: Request, db: Session = Depends(get_db)) -
 @router.get("/logiciels", response_class=HTMLResponse)
 def logiciels(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
-    from app.glpi.service import visible_run
+    if _live_inchange(request, db):
+        return Response(status_code=204)
+    from app.glpi.service import inventory_counts, visible_run
+    from app.web.queries import unknown_software
 
     run = visible_run(db)
+    lus, soft = inventory_counts(db, run)
     return render(
         request,
         "logiciels.html",
         rows=software_rows(db),
+        inconnus=unknown_software(db),
         en_cours=run is not None and run.status == "running",
-        postes_lus=len(run.computers) if run is not None else 0,
+        postes_lus=lus,
+        installations=soft,
     )
 
 
@@ -200,6 +225,7 @@ def parametres(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         jours=stale_days(db),
         heure=int(get_setting(db, "schedule_hour", 2) or 2),
         minute=int(get_setting(db, "schedule_minute", 0) or 0),
+        historique=int(get_setting(db, "history_limit", 10) or 10),
         sources=[{"cle": key, "libelle": label, "actif": key in enabled} for key, label in SOURCE_LABELS],
         smtp={
             "enabled": bool(get_setting(db, "smtp_enabled", False)),
@@ -252,8 +278,10 @@ async def sauver_plan(request: Request, db: Session = Depends(get_db)) -> Redire
     form = await request.form()
     hour = min(23, max(0, int(form.get("hour") or 2)))
     minute = min(59, max(0, int(form.get("minute") or 0)))
+    history = min(100, max(1, int(form.get("history_limit") or 10)))
     set_setting(db, "schedule_hour", hour)
     set_setting(db, "schedule_minute", minute)
+    set_setting(db, "history_limit", history)
     from app.scheduler import apply_schedule
 
     apply_schedule(request.app)

@@ -171,13 +171,39 @@ async def launch_verification(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/verification/annuler")
+async def annuler_verification(request: Request, db: Session = Depends(get_db)):
+    await enforce_csrf(request, db)
+    require_user(request, db, "technicien")
+    from app.glpi.service import cancel_verification, verification_view
+
+    cancel_verification(db)
+    if request.headers.get("hx-request"):
+        return render(
+            request,
+            "verification_progress.html",
+            progression=verification_view(db, suivre=True, settings=request.app.state.settings),
+        )
+    return RedirectResponse("/", status_code=303)
+
+
 @router.get("/verification/progression", response_class=HTMLResponse)
 def verification_progression(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
     from app.glpi.service import verification_view
 
-    return render(
-        request,
-        "verification_progress.html",
-        progression=verification_view(db, suivre=True, settings=request.app.state.settings),
+    settings = request.app.state.settings
+    leger = verification_view(db, suivre=True, settings=settings, avec_postes=False)
+    demande_lus = request.query_params.get("lus")
+    demande_logiciels = request.query_params.get("logiciels")
+    demande_etat = request.query_params.get("etat")
+    change = (
+        demande_lus is None
+        or demande_logiciels is None
+        or demande_etat is None
+        or demande_lus != str(leger["lus"])
+        or demande_logiciels != str(leger["logiciels"])
+        or demande_etat != leger["etat"]
     )
+    progression = verification_view(db, suivre=True, settings=settings) if change else leger
+    return render(request, "verification_poll.html", progression=progression, rafraichir=change)

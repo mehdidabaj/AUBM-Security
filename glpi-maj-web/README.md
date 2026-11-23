@@ -2,7 +2,7 @@
 
 Application interne qui lit les ordinateurs, les logiciels et les agents dans GLPI, les compare à des sources publiques (winget, GitHub Releases, endoflife.date, MSRC, NVD, CISA KEV et les avis des éditeurs) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
 
-L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF. Le bouton « Lancer une vérification » lit le parc en arrière-plan et affiche le pourcentage de collecte. Les postes déjà lus apparaissent dans le tableau au fur et à mesure, sans attendre la fin. Les pages Postes et Logiciels se remplissent en même temps. À 100 %, le tableau de bord se recharge.
+L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF. Le bouton « Lancer une vérification » lit le parc en arrière-plan. La collecte interroge les ordinateurs, puis seulement les versions qu'ils installent. Le pourcentage suit le volume annoncé par GLPI. Les pages se mettent à jour quand un poste ou un logiciel apparaît. « Arrêter la vérification » interrompt la lecture. Les dix dernières vérifications sont conservées (réglable dans Paramètres). À 100 %, le tableau de bord se recharge.
 
 ## Prérequis
 

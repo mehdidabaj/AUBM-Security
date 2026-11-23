@@ -49,7 +49,7 @@
     <button type="submit">Filtrer</button>
   </form>
 </section>
-<div id="liste"{% if view.en_cours %} hx-get="/postes?live=1" hx-include="#filtres-postes" hx-trigger="every 2s" hx-select="#liste" hx-target="#liste" hx-swap="outerHTML"{% endif %}>
+<div id="liste"{% if view.en_cours %} hx-get="/postes?live=1&amp;lus={{ view.lus }}&amp;soft={{ view.installations }}&amp;etat=cours" hx-include="#filtres-postes" hx-trigger="every 2s" hx-select="#liste" hx-target="#liste" hx-swap="outerHTML"{% endif %}>
   {% if view.en_cours %}
   <p class="muted">Collecte en cours : {{ view.lus }} poste(s) déjà lu(s). Cette page se met à jour toute seule.</p>
   {% endif %}

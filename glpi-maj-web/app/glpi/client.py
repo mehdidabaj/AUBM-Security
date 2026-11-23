@@ -12,6 +12,10 @@ from app.glpi.normalize import extract_build, label, normalize_name, parse_glpi_
 from app.glpi.types import AgentItem, ComputerItem, SoftwareItem
 
 USER_AGENT = "glpi-maj-web/1.0"
+PAGE_SIZE = 500
+VERSION_BATCH = 50
+PLANNED_STEPS = 5
+SESSION_ERRORS = {"ERROR_SESSION_TOKEN_INVALID", "ERROR_SESSION_TOKEN_MISSING"}
 _RANGE = re.compile(r"(\d+)-(\d+)/(\d+|\*)")
 
 
@@ -22,7 +26,7 @@ class GlpiClient:
         self,
         settings: Settings,
         http: httpx.Client | None = None,
-        page_size: int = 50,
+        page_size: int = PAGE_SIZE,
     ):
         self.settings = settings
         self.page_size = page_size
@@ -94,26 +98,105 @@ class GlpiClient:
         return self._paginate("Agent", on_page=on_page)
 
     def collect(self, on_progress=None) -> list[ComputerItem]:
-        steps = (
-            ("ordinateurs", self.list_computers),
-            ("systèmes", self.list_operating_systems),
-            ("logiciels", self.list_softwares),
-            ("versions", self.list_software_versions),
-            ("installations", self.list_software_links),
-            ("agents", self.list_agents),
-        )
-        loaded = []
-        total_steps = len(steps)
-        for index, (label, method) in enumerate(steps):
+        """Lit les ordinateurs, puis seulement les versions qu'ils installent."""
+
+        def report(index: int, label: str, read: int, total: int | None, chunk: list | None) -> None:
             if on_progress:
-                on_progress(index, total_steps, label, 0, None, [])
+                on_progress(index, PLANNED_STEPS, label, read, total, chunk or [])
 
-            def on_page(read, total, chunk=None, index=index, label=label):
-                if on_progress:
-                    on_progress(index, total_steps, label, read, total, chunk or [])
+        computers = self._paginate(
+            "Computer",
+            {"expand_dropdowns": "true"},
+            on_page=lambda read, total, chunk: report(0, "ordinateurs", read, total, chunk),
+        )
+        os_rows: list[dict] = []
+        link_rows: list[dict] = []
+        agent_rows: list[dict] = []
+        total_computers = len(computers)
+        if total_computers == 0:
+            report(1, "postes", 0, 0, [])
+        for index, computer in enumerate(computers, start=1):
+            try:
+                computer_id = int(computer["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            systems = self._subitems(computer_id, "Item_OperatingSystem")
+            os_rows.extend(systems)
+            report(1, "systèmes", index, total_computers, systems)
+            link_rows.extend(self._subitems(computer_id, "Item_SoftwareVersion"))
+            agents = self._subitems(computer_id, "Agent")
+            agent_rows.extend(agents)
+            report(1, "agents", index, total_computers, agents)
+            report(1, "postes", index, total_computers, [])
 
-            loaded.append(method(on_page=on_page))
-        return assemble(*loaded)
+        version_ids = _unique_ids(row.get("softwareversions_id") for row in link_rows)
+        versions = self._fetch_many(
+            "SoftwareVersion",
+            version_ids,
+            on_page=lambda read, total, chunk: report(2, "versions", read, total, chunk),
+        )
+        software_ids = _unique_ids(row.get("softwares_id") for row in versions)
+        softwares = self._fetch_many(
+            "Software",
+            software_ids,
+            on_page=lambda read, total, chunk: report(3, "logiciels", read, total, chunk),
+        )
+        self._report_links(link_rows, report)
+        return assemble(computers, os_rows, softwares, versions, link_rows, agent_rows)
+
+    def _report_links(self, link_rows: list[dict], report) -> None:
+        if not link_rows:
+            report(4, "installations", 0, 0, [])
+            return
+        written = 0
+        total = len(link_rows)
+        while written < total:
+            chunk = link_rows[written : written + 200]
+            written += len(chunk)
+            report(4, "installations", written, total, chunk)
+
+    def _subitems(self, computer_id: int, itemtype: str) -> list[dict]:
+        rows = self._paginate(f"Computer/{computer_id}/{itemtype}")
+        kept = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("itemtype") not in (None, "", "Computer"):
+                continue
+            raw = row.get("items_id")
+            if isinstance(raw, dict):
+                raw = raw.get("id")
+            if isinstance(raw, int) or (isinstance(raw, str) and raw.isdigit()):
+                if int(raw) != computer_id:
+                    continue
+            kept.append(row)
+        return kept
+
+    def _fetch_many(self, itemtype: str, ids: list[int], on_page=None) -> list[dict]:
+        rows: list[dict] = []
+        total = len(ids)
+        if total == 0:
+            if on_page is not None:
+                on_page(0, 0, [])
+            return rows
+        for offset in range(0, total, VERSION_BATCH):
+            part = ids[offset : offset + VERSION_BATCH]
+            params: dict[str, str] = {"expand_dropdowns": "true"}
+            for index, item_id in enumerate(part):
+                params[f"items[{index}][itemtype]"] = itemtype
+                params[f"items[{index}][items_id]"] = str(item_id)
+            response = self._request("GET", "getMultipleItems", params=params)
+            self._raise_for_glpi(response)
+            chunk = response.json()
+            if isinstance(chunk, dict):
+                chunk = chunk.get("data") or [item for item in chunk.values() if isinstance(item, dict)]
+            if not isinstance(chunk, list):
+                chunk = []
+            chunk = [item for item in chunk if isinstance(item, dict)]
+            rows.extend(chunk)
+            if on_page is not None:
+                on_page(len(rows), total, chunk)
+        return rows
 
     def _paginate(self, resource: str, params: dict | None = None, on_page=None) -> list[dict]:
         rows: list[dict] = []
@@ -135,18 +218,23 @@ class GlpiClient:
             rows.extend(chunk)
             if on_page is not None:
                 on_page(len(rows), total, chunk)
-            start += self.page_size
+            start += len(chunk)
             if total is not None and start >= total:
                 break
-            if len(chunk) < self.page_size:
+            if total is None and len(chunk) < self.page_size:
                 break
         return rows
 
-    def _request(self, method: str, resource: str, params: dict | None = None) -> httpx.Response:
+    def _request(self, method: str, resource: str, params: dict | None = None, *, renew: bool = True) -> httpx.Response:
         headers = {"User-Agent": USER_AGENT, "App-Token": self.settings.glpi_app_token}
         if self.session_token:
             headers["Session-Token"] = self.session_token
-        return self.http.request(method, f"{self.base}/{resource}", params=params, headers=headers)
+        response = self.http.request(method, f"{self.base}/{resource}", params=params, headers=headers)
+        if renew and resource != "initSession" and _error_code(response) in SESSION_ERRORS:
+            self.session_token = None
+            self.init_session()
+            return self._request(method, resource, params=params, renew=False)
+        return response
 
     @staticmethod
     def _raise_for_glpi(response: httpx.Response) -> None:
@@ -171,6 +259,22 @@ def _error_code(response: httpx.Response) -> str | None:
         if code in blob:
             return code
     return None
+
+
+def _unique_ids(values) -> list[int]:
+    found: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        if isinstance(value, dict):
+            value = value.get("id")
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number not in seen:
+            seen.add(number)
+            found.append(number)
+    return found
 
 
 def _content_range_total(header: str | None) -> int | None:

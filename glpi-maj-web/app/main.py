@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -39,6 +40,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             load_fallback_if_needed(db)
             seed_mappings(db)
             ensure_rules(db)
+            from app.glpi.service import abandon_running
+
+            abandon_running(db)
             if settings.demo_active:
                 from app.demo.loader import seed_demo_if_needed
 
@@ -90,7 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             from app.web.routes import login_page
 
             return login_page(request, detail, status_code=403)
-        return HTMLResponse(f"<p>{detail}</p>", status_code=exc.status_code)
+        return HTMLResponse(f"<p>{html.escape(detail)}</p>", status_code=exc.status_code)
 
     return app
 

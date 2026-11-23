@@ -1,0 +1,27 @@
+<div id="verif-resultats"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if progression.postes %}
+  <p class="muted">{{ progression.lus }} poste{% if progression.lus != 1 %}s{% endif %} déjà lu{% if progression.lus != 1 %}s{% endif %}. Les lignes se mettent à jour quand un poste ou un logiciel apparaît.</p>
+  <div class="progress-results">
+    <table>
+      <thead><tr><th>Poste</th><th>Service</th><th>Système</th><th>Logiciels</th><th>Résultat</th></tr></thead>
+      <tbody>
+        {% for poste in progression.postes %}
+        <tr>
+          <td>{% if poste.lien %}<a href="{{ poste.lien }}" target="_blank" rel="noopener">{{ poste.nom }}</a>{% else %}{{ poste.nom }}{% endif %}</td>
+          <td>{{ poste.service or "—" }}</td>
+          <td>{{ poste.systeme or "—" }}</td>
+          <td>{{ poste.logiciels or "—" }}</td>
+          <td>
+            <span class="badge {{ poste.classe }}">{{ poste.resultat }}</span>
+            {% if poste.detail and poste.classe != "lecture" %}<div class="muted">{{ poste.detail }}</div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if progression.lus > progression.postes|length %}
+  <p class="muted">Les {{ progression.postes|length }} postes les plus récents sont affichés.</p>
+  {% endif %}
+  {% endif %}
+</div>

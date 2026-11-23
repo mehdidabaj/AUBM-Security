@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -22,6 +22,7 @@ class CheckRun(Base):
     progress_current: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     progress_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cancel_requested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     computers: Mapped[list["ComputerRecord"]] = relationship(
         back_populates="check_run",
@@ -32,6 +33,7 @@ class CheckRun(Base):
 
 class ComputerRecord(Base):
     __tablename__ = "computer_records"
+    __table_args__ = (UniqueConstraint("check_run_id", "glpi_id", name="uq_computer_run_glpi"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     check_run_id: Mapped[int] = mapped_column(ForeignKey("check_runs.id", ondelete="CASCADE"), index=True)

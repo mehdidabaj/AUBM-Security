@@ -61,6 +61,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Heure <input type="number" min="0" max="23" name="hour" value="{{ heure }}"></label>
     <label>Minute <input type="number" min="0" max="59" name="minute" value="{{ minute }}"></label>
+    <label>Vérifications conservées <input type="number" min="1" max="100" name="history_limit" value="{{ historique }}"></label>
     <button type="submit">Enregistrer l'heure</button>
   </form>
 </section>
