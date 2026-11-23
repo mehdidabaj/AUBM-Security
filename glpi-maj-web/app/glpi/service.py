@@ -27,6 +27,11 @@ _HISTORY_KEEP = 10
 _METER_STEPS = {"ordinateurs", "postes", "versions", "logiciels", "installations"}
 
 
+def _nom_systeme_illisible(name: str) -> bool:
+    """Un nom réduit à un entier est l'identifiant GLPI, pas le libellé du système."""
+    return bool(name) and name.isdigit()
+
+
 def latest_successful(db: Session) -> CheckRun | None:
     return db.scalar(select(CheckRun).where(CheckRun.status == "success").order_by(CheckRun.id.desc()))
 
@@ -671,7 +676,11 @@ def run_verification(
                     .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
                 ).all()
                 sources = {record.glpi_id: record for record in loaded}
-                known = {record.glpi_id: record.last_inventory_at for record in loaded}
+                known = {
+                    record.glpi_id: record.last_inventory_at
+                    for record in loaded
+                    if not _nom_systeme_illisible(record.os_name)
+                }
             reprise = {"count": 0}
 
             def on_progress(index: int, total_steps: int, step: str, read: int, total: int | None, chunk=None) -> None:

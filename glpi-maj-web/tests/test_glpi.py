@@ -36,6 +36,9 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
         "SoftwareVersion": payload["software_versions"],
         "Item_SoftwareVersion": payload["software_links"],
         "Agent": payload["agents"],
+        "OperatingSystem": payload.get("OperatingSystem", []),
+        "OperatingSystemVersion": payload.get("OperatingSystemVersion", []),
+        "OperatingSystemKernelVersion": payload.get("OperatingSystemKernelVersion", []),
     }
 
     def rows_of(request: httpx.Request) -> tuple[str, list]:
@@ -46,6 +49,8 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
             computer_id = int(linked.group(1))
             kind = linked.group(2)
             sink.setdefault("details", []).append((computer_id, kind))
+            if kind == "Item_OperatingSystem":
+                sink.setdefault("os_expand", []).append(request.url.params.get("expand_dropdowns"))
             rows = [row for row in resources[kind] if int(row.get("items_id") or 0) == computer_id]
             return kind, rows
         if name == "getMultipleItems":
@@ -137,6 +142,49 @@ def test_collecte_paginee_et_session(app):
     assert computers[1].group_name == "Ressources humaines"
     assert computers[2].software == []
     assert computers[2].agent is None
+    assert sink["os_expand"] == ["true", "true", "true"]
+    assert "OperatingSystem" not in sink.get("fetched", {})
+
+
+def test_identifiant_de_systeme_remplace_par_son_nom(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    for row, system_id, version_id, kernel_id in (
+        (payload["operating_systems"][0], 2, 5, 9),
+        (payload["operating_systems"][1], 3, 6, 10),
+        (payload["operating_systems"][2], 4, 7, 11),
+    ):
+        row["operatingsystems_id"] = system_id
+        row["operatingsystemversions_id"] = version_id
+        row["operatingsystemkernelversions_id"] = kernel_id
+    payload["OperatingSystem"] = [
+        {"id": 2, "name": "Windows 11"},
+        {"id": 3, "name": "Windows 10"},
+        {"id": 4, "name": "Windows 11"},
+    ]
+    payload["OperatingSystemVersion"] = [
+        {"id": 5, "name": "26H2"},
+        {"id": 6, "name": "22H2"},
+        {"id": 7, "name": "25H2"},
+    ]
+    payload["OperatingSystemKernelVersion"] = [
+        {"id": 9, "name": "10.0.26300.9974"},
+        {"id": 10, "name": "19045.6456"},
+        {"id": 11, "name": "10.0.26200.7840"},
+    ]
+    sink: dict = {}
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink)))
+    with GlpiClient(app.state.settings, http=http, page_size=2) as client:
+        computers = client.collect()
+    assert [(computer.os_name, computer.os_version, computer.os_build) for computer in computers] == [
+        ("Windows 11", "26H2", "26300.9974"),
+        ("Windows 10", "22H2", "19045.6456"),
+        ("Windows 11", "25H2", "26200.7840"),
+    ]
+    assert sink["fetched"]["OperatingSystem"] == [2, 3, 4]
+    assert sink["fetched"]["OperatingSystemVersion"] == [5, 6, 7]
+    assert sink["fetched"]["OperatingSystemKernelVersion"] == [9, 10, 11]
 
 
 def test_les_versions_non_citees_ne_sont_pas_lues(app):
@@ -399,6 +447,20 @@ def test_deuxieme_collecte_ne_relit_que_les_postes_modifies(app):
         assert by_id[1].os_build == "26300.9974"
         assert by_id[1].agent is not None and by_id[1].agent.version == "1.21"
         assert by_id[2].software[0].name == "Microsoft Office 2016"
+        by_id[1].os_name = "3"
+        by_id[1].os_version = "3"
+        db.commit()
+        sink = {}
+        third = run_verification(
+            db,
+            app.state.settings,
+            http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink))),
+        )
+        relus = {computer_id for computer_id, _kind in sink.get("details", [])}
+        assert 1 in relus
+        restored = {computer.glpi_id: computer for computer in third.computers}
+        assert restored[1].os_name == "Windows 11"
+        assert restored[1].os_version == "26H2"
     finally:
         db.close()
 

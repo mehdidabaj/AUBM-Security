@@ -18,6 +18,11 @@ VERSION_BATCH = 50
 PLANNED_STEPS = 5
 SESSION_ERRORS = {"ERROR_SESSION_TOKEN_INVALID", "ERROR_SESSION_TOKEN_MISSING"}
 _RANGE = re.compile(r"(\d+)-(\d+)/(\d+|\*)")
+_OS_DROPDOWNS = {
+    "operatingsystems_id": "OperatingSystem",
+    "operatingsystemversions_id": "OperatingSystemVersion",
+    "operatingsystemkernelversions_id": "OperatingSystemKernelVersion",
+}
 
 
 class GlpiClient:
@@ -34,6 +39,7 @@ class GlpiClient:
         self.session_token: str | None = None
         self._owns_client = http is None
         self.http = http or httpx.Client(timeout=httpx.Timeout(30.0))
+        self._dropdown_names: dict[tuple[str, int], str] = {}
 
     def __enter__(self) -> "GlpiClient":
         self.init_session()
@@ -130,7 +136,12 @@ class GlpiClient:
             except (KeyError, TypeError, ValueError):
                 continue
             seen += 1
-            systems = self._subitems(computer_id, "Item_OperatingSystem")
+            systems = self._subitems(
+                computer_id,
+                "Item_OperatingSystem",
+                {"expand_dropdowns": "true"},
+            )
+            systems = self._resolve_os_labels(systems)
             os_rows.extend(systems)
             report(1, "systèmes", seen, total_computers, systems)
             link_rows.extend(self._subitems(computer_id, "Item_SoftwareVersion"))
@@ -165,8 +176,8 @@ class GlpiClient:
             written += len(chunk)
             report(4, "installations", written, total, chunk)
 
-    def _subitems(self, computer_id: int, itemtype: str) -> list[dict]:
-        rows = self._paginate(f"Computer/{computer_id}/{itemtype}")
+    def _subitems(self, computer_id: int, itemtype: str, params: dict | None = None) -> list[dict]:
+        rows = self._paginate(f"Computer/{computer_id}/{itemtype}", params)
         kept = []
         for row in rows:
             if not isinstance(row, dict):
@@ -181,6 +192,40 @@ class GlpiClient:
                     continue
             kept.append(row)
         return kept
+
+    def _resolve_os_labels(self, rows: list[dict]) -> list[dict]:
+        """Remplace un identifiant nu (3) par le nom du système, de la version et du noyau.
+
+        GLPI renvoie ces clés comme des entiers lorsque expand_dropdowns n'est pas appliqué.
+        """
+        pending: dict[str, set[int]] = {itemtype: set() for itemtype in _OS_DROPDOWNS.values()}
+        for row in rows:
+            for field, itemtype in _OS_DROPDOWNS.items():
+                number = _bare_id(row.get(field))
+                if number is not None and (itemtype, number) not in self._dropdown_names:
+                    pending[itemtype].add(number)
+        for itemtype, ids in pending.items():
+            if not ids:
+                continue
+            found: dict[int, str] = {}
+            for item in self._fetch_many(itemtype, sorted(ids)):
+                try:
+                    found[int(item["id"])] = label(item.get("name"))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            for number in ids:
+                self._dropdown_names[(itemtype, number)] = found.get(number, "")
+        if not any(_bare_id(row.get(field)) is not None for row in rows for field in _OS_DROPDOWNS):
+            return rows
+        resolved: list[dict] = []
+        for row in rows:
+            copy = dict(row)
+            for field, itemtype in _OS_DROPDOWNS.items():
+                number = _bare_id(copy.get(field))
+                if number is not None:
+                    copy[field] = self._dropdown_names.get((itemtype, number), "")
+            resolved.append(copy)
+        return resolved
 
     def _fetch_many(self, itemtype: str, ids: list[int], on_page=None) -> list[dict]:
         rows: list[dict] = []
@@ -289,6 +334,17 @@ def _split_changes(computers: list[dict], known: dict[int, datetime | None] | No
         else:
             pending.append(computer)
     return unchanged, pending
+
+
+def _bare_id(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str) and value.isdigit():
+        number = int(value)
+        return number if number > 0 else None
+    return None
 
 
 def _unique_ids(values) -> list[int]:
