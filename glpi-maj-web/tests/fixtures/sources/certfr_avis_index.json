@@ -1,0 +1,20 @@
+[
+  {
+    "json_url": "/avis/CERTFR-2026-AVI-0001/json/",
+    "last_revision_date": "2026-11-10T00:00:00.000000",
+    "reference": "CERTFR-2026-AVI-0001",
+    "title": "Vulnérabilité dans Google Chrome"
+  },
+  {
+    "json_url": "/avis/CERTFR-2024-AVI-0001/json/",
+    "last_revision_date": "2024-01-02T00:00:00.000000",
+    "reference": "CERTFR-2024-AVI-0001",
+    "title": "Vulnérabilité dans Google Chrome"
+  },
+  {
+    "json_url": "/avis/CERTFR-2026-AVI-0002/json/",
+    "last_revision_date": "2026-11-12T00:00:00.000000",
+    "reference": "CERTFR-2026-AVI-0002",
+    "title": "Vulnérabilité dans un produit interne"
+  }
+]

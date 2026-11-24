@@ -1,0 +1,12 @@
+{
+  "reference": "CERTFR-2026-AVI-0001",
+  "title": "Vulnérabilité dans Google Chrome",
+  "summary": "Une vulnérabilité a été découverte dans Google Chrome.",
+  "cves": [{"name": "CVE-2026-2857", "url": "https://www.cve.org/CVERecord?id=CVE-2026-2857"}],
+  "affected_systems": [
+    {
+      "description": "Google Chrome versions antérieures à 142",
+      "product": {"name": "Chrome", "vendor": {"name": "Google"}}
+    }
+  ]
+}

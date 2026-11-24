@@ -1,0 +1,14 @@
+{
+  "value": [
+    {
+      "ID": "2026-Oct",
+      "CurrentReleaseDate": "2026-10-13T00:00:00",
+      "DocumentTitle": "October 2026 Security Updates"
+    },
+    {
+      "ID": "2026-Nov",
+      "CurrentReleaseDate": "2026-11-10T00:00:00",
+      "DocumentTitle": "November 2026 Security Updates"
+    }
+  ]
+}

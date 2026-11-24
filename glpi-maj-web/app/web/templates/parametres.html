@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Paramètres{% endblock %}
+{% block content %}
+{% if message %}<p class="ok">{{ message }}</p>{% endif %}
+<section class="card">
+  <h1>Paramètres</h1>
+  <h2>Connexion GLPI</h2>
+  <form method="post" action="/parametres/glpi-test">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" hx-post="/parametres/glpi-test" hx-target="#glpi-test" hx-swap="innerHTML">Tester la connexion GLPI</button>
+  </form>
+  <div id="glpi-test"></div>
+</section>
+
+<section class="card">
+  <h2>Sources interrogées</h2>
+  <form method="post" action="/parametres/sources">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for source in sources %}
+    <label class="check"><input type="checkbox" name="{{ source.cle }}" {% if source.actif %}checked{% endif %}> {{ source.libelle }}</label>
+    {% endfor %}
+    <button type="submit">Enregistrer les sources</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Vérifications conservées</h2>
+  <form method="post" action="/parametres/historique" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Nombre <input type="number" min="1" max="100" name="history_limit" value="{{ historique }}"></label>
+    <button type="submit">Enregistrer</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Comptes</h2>
+  <form method="post" action="/comptes">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Identifiant <input name="username" required></label>
+    <label>Mot de passe <input type="password" name="password" required></label>
+    <label>Rôle
+      <select name="role">
+        <option value="lecture">Lecture</option>
+        <option value="technicien">Technicien</option>
+        <option value="admin">Administrateur</option>
+      </select>
+    </label>
+    <button type="submit">Créer le compte</button>
+  </form>
+</section>
+{% endblock %}

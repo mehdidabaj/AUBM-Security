@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.computer.name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <p><a href="/postes">Retour aux postes</a></p>
+  <h1>{{ detail.computer.name }}</h1>
+  <p><span class="badge {{ detail.priorite }}">{{ detail.priorite }}</span>
+    {% if detail.en_cours and not detail.actions %} Lecture en cours{% elif detail.a_jour %} À jour{% else %} À mettre à jour{% endif %}</p>
+  <dl class="facts">
+    <div><dt>Service</dt><dd>{{ detail.computer.group_name or "—" }}</dd></div>
+    <div><dt>Système</dt><dd>{{ detail.computer.os_name }} {{ detail.computer.os_version }}{% if detail.computer.os_build %} ({{ detail.computer.os_build }}){% endif %}</dd></div>
+  </dl>
+  <p><a href="{{ detail.lien }}" target="_blank" rel="noopener">Fiche GLPI</a></p>
+</section>
+
+<section class="card">
+  <h2>Logiciels relevés</h2>
+  <ul>
+    {% for logiciel in detail.computer.software %}
+    <li>{{ logiciel.name }} — {{ logiciel.version or "version inconnue" }}</li>
+    {% else %}
+    <li>Aucun logiciel inventorié.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Historique des mises à jour</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Origine</th><th>Logiciel</th><th>Avant</th><th>Après</th><th>Note</th></tr></thead>
+    <tbody>
+      {% for changement in detail.historique %}
+      <tr>
+        <td>{{ changement.detected_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><span class="badge {{ changement.origin }}">{% if changement.origin == "manuel" %}Administrateur{% else %}Automatique{% endif %}</span>{% if changement.actor %} {{ changement.actor }}{% endif %}</td>
+        <td>{{ changement.software_name }}</td>
+        <td>{{ changement.previous_version or "—" }}</td>
+        <td>{{ changement.new_version or "—" }}</td>
+        <td>{{ changement.note }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Aucune mise à jour constatée. La première collecte sert de référence ; l'écart apparaît à la vérification suivante, ou quand un administrateur enregistre un suivi.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Actions</h2>
+  {% for item in detail.actions %}
+  <article class="action">
+    <h3><span class="badge {{ item.action.severity }}">{{ item.action.severity }}</span> {{ item.action.title }}</h3>
+    <p>{{ item.action.detail }}</p>
+    {% if item.action.installed_version or item.action.target_version %}
+    <p>Installé : {{ item.action.installed_version or "—" }} · Cible : {{ item.action.target_version or "—" }}</p>
+    {% endif %}
+    {% if item.cves %}
+    <ul>
+      {% for cve in item.cves %}
+      <li>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.severite %} <span class="badge {{ cve.severite }}">{{ {"critique": "Critique", "important": "Important", "moyenne": "Moyenne", "faible": "Faible"}[cve.severite] }}</span>{% endif %}{% if cve.certfr %} ({% if cve.certfr_url and cve.certfr_url != cve.url %}<a href="{{ cve.certfr_url }}" target="_blank" rel="noopener">CERT-FR{% if cve.certfr_alert %} alerte{% endif %}</a>{% else %}CERT-FR{% if cve.certfr_alert %} alerte{% endif %}{% endif %}){% endif %}{% if cve.cvss is not none %} — CVSS {{ cve.cvss }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if item.action.source_url %}
+    <p><a href="{{ item.action.source_url }}" target="_blank" rel="noopener">Source de la recommandation</a></p>
+    {% endif %}
+    {% if role_rank[user.role] >= role_rank["technicien"] %}
+    <form method="post" action="/postes/{{ detail.computer.glpi_id }}/suivi" class="suivi">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action_key" value="{{ item.action.action_key }}">
+      <label>État
+        <select name="status">
+          {% for value, label in statuts.items() %}
+          <option value="{{ value }}" {% if item.suivi and item.suivi.status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Technicien
+        <input name="technician" value="{{ item.suivi.technician if item.suivi else user.username }}">
+      </label>
+      <label>Date
+        <input type="date" name="followed_on" value="{{ item.suivi.followed_on.strftime('%Y-%m-%d') if item.suivi and item.suivi.followed_on else '' }}">
+      </label>
+      <label>Commentaire
+        <textarea name="comment">{{ item.suivi.comment if item.suivi else "" }}</textarea>
+      </label>
+      <button type="submit">Enregistrer le suivi</button>
+    </form>
+    {% elif item.suivi %}
+    <p>Suivi : {{ statuts.get(item.suivi.status, item.suivi.status) }} — {{ item.suivi.technician }} — {{ item.suivi.comment }}</p>
+    {% endif %}
+  </article>
+  {% else %}
+  <p>Aucune action sur ce poste.</p>
+  {% endfor %}
+</section>
+{% endblock %}

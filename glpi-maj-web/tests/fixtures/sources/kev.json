@@ -1,0 +1,21 @@
+{
+  "catalogVersion": "2026.11.19",
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2026-1000",
+      "vendorProject": "Google",
+      "product": "Chrome",
+      "vulnerabilityName": "Chrome type confusion",
+      "dateAdded": "2026-11-18",
+      "shortDescription": "Actively exploited."
+    },
+    {
+      "cveID": "CVE-2014-0160",
+      "vendorProject": "OpenSSL",
+      "product": "OpenSSL",
+      "vulnerabilityName": "Heartbleed",
+      "dateAdded": "2022-01-01",
+      "shortDescription": "Ancienne entrée, hors fenêtre récente."
+    }
+  ]
+}

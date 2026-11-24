@@ -1,0 +1,13 @@
+<div id="verif-compteur"{% if progression.en_cours %} hx-get="/verification/progression?lus={{ progression.lus }}&amp;logiciels={{ progression.logiciels }}&amp;etat={{ progression.etat }}" hx-trigger="every 1s" hx-swap="outerHTML" role="progressbar" aria-valuenow="{{ progression.pourcent }}" aria-valuemin="0" aria-valuemax="100" aria-live="polite"{% elif progression.recharger %} hx-get="/" hx-trigger="load delay:1s" hx-target=".content" hx-select=".content" hx-swap="outerHTML"{% endif %}>
+  {% if progression.erreur %}
+  <p class="alert">{{ progression.texte }}</p>
+  {% elif progression.en_cours or progression.recharger %}
+  <p class="muted">Taux de collecte</p>
+  <p class="progress-percent">{{ progression.pourcent }} %</p>
+  <div class="progress-track"><span style="width: {{ progression.pourcent }}%"></span></div>
+  <p class="muted">{{ progression.texte }}</p>
+  {% if progression.en_cours %}
+  <p class="muted">{{ progression.lus }} poste{% if progression.lus != 1 %}s{% endif %} déjà lu{% if progression.lus != 1 %}s{% endif %}, {{ progression.logiciels }} logiciel{% if progression.logiciels != 1 %}s{% endif %} déjà lié{% if progression.logiciels != 1 %}s{% endif %}.</p>
+  {% endif %}
+  {% endif %}
+</div>

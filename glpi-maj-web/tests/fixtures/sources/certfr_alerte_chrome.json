@@ -1,0 +1,12 @@
+{
+  "reference": "CERTFR-2026-ALE-001",
+  "title": "Alerte dans Google Chrome",
+  "summary": "Une vulnérabilité de Google Chrome est exploitée.",
+  "cves": [{"name": "CVE-2026-1000"}, {"name": "CVE-2026-9999"}],
+  "affected_systems": [
+    {
+      "description": "Google Chrome",
+      "product": {"name": "Chrome", "vendor": {"name": "Google"}}
+    }
+  ]
+}

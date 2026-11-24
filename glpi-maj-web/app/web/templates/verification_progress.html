@@ -1,0 +1,21 @@
+<div id="verif-lancement" class="progress">
+  {% if role_rank[user.role] >= role_rank["technicien"] %}
+  <form method="post" action="/verification">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" hx-post="/verification" hx-target="#verif-lancement" hx-swap="outerHTML"{% if progression.en_cours %} disabled{% endif %}>Lancer une vérification</button>
+  </form>
+  {% if progression.en_cours %}
+  <form method="post" action="/verification/annuler">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" hx-post="/verification/annuler" hx-target="#verif-lancement" hx-swap="outerHTML">Arrêter la vérification</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  {% if progression.en_cours or progression.erreur or progression.recharger %}
+  <div class="progress-panel">
+    {% set oob = false %}
+    {% include "verification_compteur.html" %}
+    {% include "verification_resultats.html" %}
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,11 @@
+{
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2026-1000",
+        "descriptions": [{"lang": "en", "value": "A critical bug in Chrome."}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 9.1}}]}
+      }
+    }
+  ]
+}

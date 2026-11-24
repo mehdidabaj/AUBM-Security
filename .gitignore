@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.db
+*.sqlite3
+glpi-maj-web/config.env
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage

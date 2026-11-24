@@ -1,0 +1,10 @@
+[Unit]
+Description=Planifie la sauvegarde quotidienne de glpi-maj-web
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=glpi-maj-web-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}Suivi des mises à jour{% endblock %} · GLPI</title>
+  {% if csrf_token %}
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  {% endif %}
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js"></script>
+</head>
+<body {% if csrf_token %}hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'{% endif %}>
+  {% if user %}
+  <div class="shell">
+    <aside class="sidebar">
+      <p class="brand">Mises à jour</p>
+      <p class="brand-sub">Parc GLPI</p>
+      <nav>
+        <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Tableau de bord</a>
+        <a href="/postes" {% if request.url.path.startswith("/postes") %}class="active"{% endif %}>Postes</a>
+        <a href="/securite" {% if request.url.path.startswith("/securite") %}class="active"{% endif %}>Sécurité</a>
+        <a href="/suivis" {% if request.url.path.startswith("/suivis") %}class="active"{% endif %}>Me concerne</a>
+        <a href="/sources" {% if request.url.path.startswith("/sources") %}class="active"{% endif %}>Sources</a>
+        {% if role_rank[user.role] >= role_rank["admin"] %}
+        <a href="/parametres" {% if request.url.path.startswith("/parametres") %}class="active"{% endif %}>Paramètres</a>
+        {% endif %}
+      </nav>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <strong>{{ user.username }}</strong>
+          <span class="role">{{ user.role }}</span>
+        </div>
+        <form method="post" action="/deconnexion">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="linkish">Déconnexion</button>
+        </form>
+      </header>
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% else %}
+  <main class="auth-wrap">
+    {% block auth %}{% endblock %}
+  </main>
+  {% endif %}
+</body>
+</html>

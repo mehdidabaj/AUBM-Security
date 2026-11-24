@@ -1,0 +1,30 @@
+{% set tri = params.tri %}
+{% set sens = params.sens %}
+<section class="card">
+  <table>
+    <thead>
+      <tr>
+        {% for key, label in [("nom", "Poste"), ("service", "Service"), ("priorite", "Priorité"), ("actions", "Actions")] %}
+        {% set suivant = "asc" if tri == key and sens != "asc" else "desc" %}
+        <th><a href="/postes?tri={{ key }}&amp;sens={{ suivant }}&amp;service={{ params.service }}&amp;priorite={{ params.priorite }}&amp;a_jour={{ params.a_jour }}&amp;logiciel={{ params.logiciel }}&amp;q={{ params.q }}" hx-get="/postes?tri={{ key }}&amp;sens={{ suivant }}&amp;service={{ params.service }}&amp;priorite={{ params.priorite }}&amp;a_jour={{ params.a_jour }}&amp;logiciel={{ params.logiciel }}&amp;q={{ params.q }}" hx-target="#liste" hx-push-url="true">{{ label }}</a></th>
+        {% endfor %}
+        <th>À jour</th>
+        <th>GLPI</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in view.rows %}
+      <tr>
+        <td><a href="/postes/{{ row.glpi_id }}">{{ row.nom }}</a></td>
+        <td>{{ row.service or "—" }}</td>
+        <td><span class="badge {{ row.priorite }}">{{ row.priorite_libelle }}</span></td>
+        <td>{{ row.actions }}</td>
+        <td>{% if row.priorite == "lecture" %}—{% elif row.a_jour %}Oui{% else %}Non{% endif %}</td>
+        <td><a href="{{ row.lien }}" target="_blank" rel="noopener">Ouvrir</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">{% if view.en_cours %}Lecture en cours, aucun poste lu pour l'instant.{% else %}Aucun poste ne correspond aux filtres.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

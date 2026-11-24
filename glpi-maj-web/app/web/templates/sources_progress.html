@@ -1,0 +1,3 @@
+<div id="progression" class="progress" {% if progression.en_cours %}hx-get="/sources/progression" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <p>{{ progression.texte }}</p>
+</div>
