@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Sécurité{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Avis et alertes de sécurité</h1>
+  <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, qu'ils concernent le parc ou non. Un bulletin « Parc » cite un logiciel installé.</p>
+  <form class="filters" method="get" action="/securite">
+    <label>Affichage
+      <select name="lien" onchange="this.form.submit()">
+        <option value="">Tous</option>
+        <option value="parc" {% if vue.lies_seulement %}selected{% endif %}>Liés au parc</option>
+      </select>
+    </label>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Alertes</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Référence</th><th>Titre</th><th>Parc</th></tr></thead>
+    <tbody>
+      {% for row in vue.alertes %}
+      <tr>
+        <td>{{ row.revised }}</td>
+        <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
+        <td>{{ row.title or "—" }}</td>
+        <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">Aucune alerte récente. Lancez « Mettre à jour les sources ».</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Avis</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Référence</th><th>Titre</th><th>Parc</th></tr></thead>
+    <tbody>
+      {% for row in vue.avis %}
+      <tr>
+        <td>{{ row.revised }}</td>
+        <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
+        <td>{{ row.title or "—" }}</td>
+        <td>{% if row.lie %}<span class="badge important">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">Aucun avis récent. Lancez « Mettre à jour les sources ».</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

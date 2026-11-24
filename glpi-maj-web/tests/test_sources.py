@@ -219,6 +219,12 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
         assert certfr["CVE-2026-9999"]["alert"] is True
         assert certfr["CVE-2026-9999"]["cvss"] == 8.8
         assert certfr["CVE-2026-9999"]["severite"] == "critique"
+        bulletins = {row["reference"]: row for row in payload_of(get_cache(db, "certfr", "catalog"))["bulletins"]}
+        assert set(bulletins) == {"CERTFR-2026-ALE-001", "CERTFR-2026-AVI-0001", "CERTFR-2026-AVI-0002"}
+        assert bulletins["CERTFR-2026-ALE-001"]["alert"] is True
+        assert bulletins["CERTFR-2026-ALE-001"]["products"] == ["chrome"]
+        assert bulletins["CERTFR-2026-AVI-0002"]["products"] == []
+        assert bulletins["CERTFR-2026-AVI-0002"]["url"].endswith("/avis/CERTFR-2026-AVI-0002/")
         assert not any("CERTFR-2024" in url or "AVI-0001" in url or "AVI-0002" in url for url in seen)
         assert any("ALE-001" in url for url in seen)
         assert not any("firefox" in url or "api.msrc" in url or "endoflife" in url for url in seen)

@@ -7,15 +7,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.actions.engine import follow_up_for, is_up_to_date, priority_of
-from app.actions.mapping import unmatched_names
+from app.actions.mapping import resolve_slug, unmatched_names
 from app.actions.rules import include_low
 from app.actions.versions import is_outdated, parse_version
 from app.glpi.service import glpi_computer_url, latest_successful, visible_run
 from app.models.actions import ComputedAction
 from app.models.inventory import CheckRun, ComputerRecord
 from app.models.sources import SourceRun
-from app.sources.cache import source_overview, version_target
+from app.sources.cache import get_cache, payload_of, source_overview, version_target
 from app.sources.catalog import PRODUCTS
+from app.sources.service import VULN_RECENT_DAYS
 from app.config import Settings
 
 SEVERITY_LABELS = {
@@ -281,3 +282,46 @@ def unknown_software(db: Session) -> list[dict]:
 
 def journal(db: Session, limit: int = 30) -> list[SourceRun]:
     return list(db.scalars(select(SourceRun).order_by(SourceRun.id.desc()).limit(limit)))
+
+
+def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
+    """Avis et alertes CERT-FR récents, qu'ils concernent le parc ou non."""
+    payload = payload_of(get_cache(db, "certfr", "catalog"))
+    installed = _installed_slugs(db)
+    alertes: list[dict] = []
+    avis: list[dict] = []
+    for row in payload.get("bulletins") or []:
+        if not isinstance(row, dict):
+            continue
+        slugs = [slug for slug in row.get("products") or [] if slug in PRODUCTS]
+        logiciels = [PRODUCTS[slug].label for slug in slugs if slug in installed]
+        item = {
+            "reference": str(row.get("reference") or ""),
+            "title": str(row.get("title") or ""),
+            "url": str(row.get("url") or ""),
+            "revised": str(row.get("revised") or ""),
+            "lie": bool(logiciels),
+            "logiciels": logiciels,
+        }
+        if linked_only and not item["lie"]:
+            continue
+        if row.get("alert"):
+            alertes.append(item)
+        else:
+            avis.append(item)
+    alertes.sort(key=lambda item: item["revised"], reverse=True)
+    avis.sort(key=lambda item: item["revised"], reverse=True)
+    return {"alertes": alertes, "avis": avis, "jours": VULN_RECENT_DAYS, "lies_seulement": linked_only}
+
+
+def _installed_slugs(db: Session) -> set[str]:
+    run = visible_run(db)
+    if run is None:
+        return set()
+    found: set[str] = set()
+    for computer in _computers(db, run):
+        for software in computer.software:
+            slug = resolve_slug(db, software.name)
+            if slug:
+                found.add(slug)
+    return found

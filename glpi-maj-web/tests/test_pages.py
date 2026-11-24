@@ -400,3 +400,52 @@ def test_logiciels_affiche_la_severite_de_la_faille(client, app, admin):
     assert 'class="badge critique"' in page.text
     assert "Critique" in page.text
     assert "8.8" in page.text
+
+
+def test_page_securite_liste_avis_et_alertes_hors_parc(client, app, admin):
+    from app.sources.cache import put_cache
+
+    login(client, "admin", "motdepasse-admin")
+    db = app.state.SessionLocal()
+    try:
+        put_cache(
+            db,
+            "certfr",
+            "catalog",
+            {
+                "cves": {},
+                "bulletins": [
+                    {
+                        "reference": "CERTFR-2026-ALE-001",
+                        "title": "Alerte dans Google Chrome",
+                        "kind": "alerte",
+                        "alert": True,
+                        "revised": "2026-11-15",
+                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
+                        "products": ["chrome"],
+                    },
+                    {
+                        "reference": "CERTFR-2026-AVI-0099",
+                        "title": "Vulnérabilité dans un produit interne",
+                        "kind": "avis",
+                        "alert": False,
+                        "revised": "2026-11-12",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0099/",
+                        "products": [],
+                    },
+                ],
+            },
+            origin="live",
+        )
+    finally:
+        db.close()
+    page = client.get("/securite")
+    assert page.status_code == 200
+    assert "Alertes" in page.text
+    assert "Avis" in page.text
+    assert "CERTFR-2026-ALE-001" in page.text
+    assert "CERTFR-2026-AVI-0099" in page.text
+    assert "Google Chrome" in page.text
+    lies = client.get("/securite", params={"lien": "parc"})
+    assert "CERTFR-2026-ALE-001" in lies.text
+    assert "CERTFR-2026-AVI-0099" not in lies.text

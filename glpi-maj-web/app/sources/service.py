@@ -505,13 +505,19 @@ def _collect_kev(db, client, products, sleep, now) -> int:
 
 
 def _collect_certfr(db, client, products, sleep, now) -> int:
-    if not products:
-        return 0
     cached = get_cache(db, "certfr", "catalog")
-    if cached and cached.checked_at and cached.checked_at.date() == now.date() and not cached.last_error:
-        return len((payload_of(cached).get("cves") or {}))
+    cached_payload = payload_of(cached) if cached else {}
+    if (
+        cached
+        and cached.checked_at
+        and cached.checked_at.date() == now.date()
+        and not cached.last_error
+        and "bulletins" in cached_payload
+    ):
+        return len((cached_payload.get("cves") or {}))
     avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
     alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
+    bulletins = _recent_bulletins(avis, alertes, products, now)
     latest = _certfr_latest_rows(avis, alertes, products)
     chosen = {slug: str(row.get("reference") or "") for slug, row in latest.items()}
     cves: dict[str, dict] = {}
@@ -539,8 +545,40 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         parsed["cvss"] = score.get("cvss")
         parsed["severite"] = severity_name(parsed["cvss"], alert=parsed["alert"], cvss_label=score.get("cvss_label") or "")
         _remember_certfr(cves, parsed, cve["id"], owned)
-    put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
+    put_cache(db, "certfr", "catalog", {"cves": cves, "bulletins": bulletins}, origin="live", now=now)
     return len(cves)
+
+
+def _recent_bulletins(avis: list, alertes: list, products: list[Product], now: datetime) -> list[dict]:
+    """Avis et alertes des derniers mois, même sans logiciel du parc."""
+    horizon = (now - timedelta(days=VULN_RECENT_DAYS)).date()
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for kind, items in (("alerte", alertes), ("avis", avis)):
+        for row in items:
+            if not isinstance(row, dict):
+                continue
+            revised = _certfr_date(row.get("last_revision_date"))
+            reference = str(row.get("reference") or "").strip()
+            if revised is None or revised.date() < horizon or not reference or reference in seen:
+                continue
+            if "/" in reference or ".." in reference:
+                continue
+            seen.add(reference)
+            title = str(row.get("title") or "").strip()
+            rows.append(
+                {
+                    "reference": reference,
+                    "title": title,
+                    "kind": kind,
+                    "alert": kind == "alerte",
+                    "revised": revised.date().isoformat(),
+                    "url": f"{CERTFR_SITE}/{kind}/{reference}/",
+                    "products": sorted(_slugs_in(title, products)),
+                }
+            )
+    rows.sort(key=lambda item: (item["revised"], item["alert"]), reverse=True)
+    return rows
 
 
 def _cve_score(client, cve_id: str, sleep) -> dict:

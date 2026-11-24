@@ -18,6 +18,7 @@ from app.web.queries import (
     computer_views,
     dashboard,
     journal,
+    security_bulletins,
     software_rows,
 )
 from app.web.routes import render
@@ -137,6 +138,13 @@ def logiciels(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         postes_lus=lus,
         installations=soft,
     )
+
+
+@router.get("/securite", response_class=HTMLResponse)
+def securite(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    require_user(request, db)
+    linked_only = request.query_params.get("lien") == "parc"
+    return render(request, "securite.html", vue=security_bulletins(db, linked_only=linked_only))
 
 
 @router.get("/logiciels/a-associer", response_class=HTMLResponse)
