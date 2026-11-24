@@ -13,8 +13,11 @@ from app.actions.rules import include_low
 from app.actions.versions import is_outdated, parse_version
 from app.glpi.service import glpi_computer_url, latest_successful, visible_run
 from app.models.actions import ComputedAction
+from app.models.history import SoftwareChange
 from app.models.inventory import CheckRun, ComputerRecord
 from app.models.sources import SourceRun
+from app.security_topics import KIND_LABELS, bulletin_kind
+from app.watches import follows, watched_keys
 from app.sources.cache import get_cache, payload_of, source_overview, version_target
 from app.sources.catalog import PRODUCTS, match_key
 from app.sources.service import VULN_RECENT_DAYS
@@ -213,6 +216,14 @@ def computer_detail(db: Session, settings: Settings, glpi_id: int) -> dict | Non
         "a_jour": False if en_cours else is_up_to_date(actions, include_low(db)),
         "en_cours": run.status == "running",
         "lien": glpi_computer_url(settings, glpi_id),
+        "historique": list(
+            db.scalars(
+                select(SoftwareChange)
+                .where(SoftwareChange.glpi_computer_id == glpi_id)
+                .order_by(SoftwareChange.detected_at.desc(), SoftwareChange.id.desc())
+                .limit(30)
+            )
+        ),
     }
 
 
@@ -292,13 +303,20 @@ def journal(db: Session, limit: int = 30) -> list[SourceRun]:
     return list(db.scalars(select(SourceRun).order_by(SourceRun.id.desc()).limit(limit)))
 
 
-def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
-    """Avis et alertes CERT-FR récents, qu'ils concernent le parc ou non."""
+_SECURITY_MODES = {"", "parc", "logiciel", "materiel", "ransomware", "suivis"}
+_KIND_RANK = {"ransomware": 0, "materiel": 1, "logiciel": 2}
+
+
+def security_bulletins(db: Session, *, mode: str = "") -> dict:
+    """Avis et alertes CERT-FR récents, filtrés par parc, type ou suivi."""
+    if mode not in _SECURITY_MODES:
+        mode = ""
     payload = payload_of(get_cache(db, "certfr", "bulletins"))
     raw = payload.get("items")
     if not raw:
         raw = payload_of(get_cache(db, "certfr", "catalog")).get("bulletins") or []
     installed = _installed_slugs(db)
+    followed = watched_keys(db)
     alertes: list[dict] = []
     avis: list[dict] = []
     lus = 0
@@ -307,6 +325,7 @@ def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
             continue
         lus += 1
         title = str(row.get("title") or "")
+        kind = bulletin_kind(title)
         logiciels = [PRODUCTS[slug].label for slug in _cited_on_park(title, installed)]
         item = {
             "reference": str(row.get("reference") or ""),
@@ -315,30 +334,51 @@ def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
             "revised": str(row.get("revised") or ""),
             "lie": bool(logiciels),
             "logiciels": logiciels,
+            "type": kind,
+            "type_label": KIND_LABELS.get(kind, "Logiciel"),
+            "suivi": follows(title, followed),
         }
-        if linked_only and not item["lie"]:
+        if mode == "parc" and not item["lie"]:
+            continue
+        if mode in {"logiciel", "materiel", "ransomware"} and item["type"] != mode:
+            continue
+        if mode == "suivis" and not item["suivi"]:
             continue
         if row.get("alert"):
             alertes.append(item)
         else:
             avis.append(item)
-    alertes.sort(key=lambda item: item["revised"], reverse=True)
-    avis.sort(key=lambda item: item["revised"], reverse=True)
+    for bucket in (alertes, avis):
+        bucket.sort(key=lambda item: item["revised"], reverse=True)
+        if mode == "":
+            bucket.sort(key=lambda item: _KIND_RANK.get(item["type"], 9))
     run = db.scalar(select(SourceRun).where(SourceRun.source == "toutes").order_by(SourceRun.id.desc()))
     en_cours = run is not None and run.status == "running" and run.finished_at is None
     certfr = db.scalar(select(SourceRun).where(SourceRun.source == "certfr").order_by(SourceRun.id.desc()))
     erreur = ""
-    if not alertes and not avis and certfr is not None and certfr.status == "error":
+    if not alertes and not avis and certfr is not None and certfr.status == "error" and mode == "":
         erreur = certfr.error or certfr.message
     return {
         "alertes": alertes,
         "avis": avis,
         "jours": VULN_RECENT_DAYS,
-        "lies_seulement": linked_only,
+        "lien": mode,
+        "lies_seulement": mode == "parc",
         "en_cours": en_cours,
         "erreur": erreur,
         "lus": lus,
     }
+
+
+def bulletin_title(db: Session, reference: str) -> str:
+    payload = payload_of(get_cache(db, "certfr", "bulletins"))
+    raw = payload.get("items")
+    if not raw:
+        raw = payload_of(get_cache(db, "certfr", "catalog")).get("bulletins") or []
+    for row in raw:
+        if isinstance(row, dict) and str(row.get("reference") or "") == reference:
+            return str(row.get("title") or "")
+    return ""
 
 
 def _installed_slugs(db: Session) -> set[str]:

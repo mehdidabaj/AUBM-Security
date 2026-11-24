@@ -247,6 +247,9 @@ def save_check(
         run.progress_total = 100
         run.message = f"Collecte terminée : {_postes(len(computers))}."
         run.summary_json = json.dumps(build_summary(previous, computers), ensure_ascii=False)
+        from app.history import record_collection_changes
+
+        record_collection_changes(db, run, previous)
     else:
         run.summary_json = json.dumps(
             {
@@ -513,6 +516,9 @@ def finalize_run(db: Session, run: CheckRun, reprise: int = 0) -> CheckRun:
         },
         ensure_ascii=False,
     )
+    from app.history import record_collection_changes
+
+    record_collection_changes(db, run, previous)
     db.commit()
     db.refresh(run)
     from app.actions.engine import compute_check

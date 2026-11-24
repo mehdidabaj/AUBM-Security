@@ -14,6 +14,7 @@ from app.sources.catalog import PRODUCTS, SOURCE_LABELS
 from app.web.deps import enforce_csrf, get_db, require_user
 from app.web.queries import (
     STATUS_LABELS,
+    bulletin_title,
     computer_detail,
     computer_views,
     dashboard,
@@ -140,11 +141,16 @@ def logiciels(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     )
 
 
+_SECURITY_LIENS = {"", "parc", "logiciel", "materiel", "ransomware", "suivis"}
+
+
 @router.get("/securite", response_class=HTMLResponse)
 def securite(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
-    linked_only = request.query_params.get("lien") == "parc"
-    vue = security_bulletins(db, linked_only=linked_only)
+    lien = request.query_params.get("lien") or ""
+    if lien not in _SECURITY_LIENS:
+        lien = ""
+    vue = security_bulletins(db, mode=lien)
     if request.query_params.get("live") == "1":
         etat = "cours" if vue["en_cours"] else "pret"
         identique = (
@@ -155,6 +161,25 @@ def securite(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         if identique:
             return Response(status_code=204)
     return render(request, "securite.html", vue=vue)
+
+
+@router.post("/securite/suivi")
+async def suivi_securite(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    await enforce_csrf(request, db)
+    user = require_user(request, db, "technicien")
+    form = await request.form()
+    reference = str(form.get("reference") or "").strip()
+    retour = str(form.get("retour") or "")
+    if retour not in _SECURITY_LIENS:
+        retour = ""
+    title = bulletin_title(db, reference)
+    if not title:
+        raise HTTPException(status_code=404, detail="Bulletin introuvable.")
+    from app.watches import toggle_watch
+
+    toggle_watch(db, title, user.username)
+    target = "/securite" if not retour else f"/securite?lien={retour}"
+    return RedirectResponse(target, status_code=303)
 
 
 @router.get("/logiciels/a-associer", response_class=HTMLResponse)

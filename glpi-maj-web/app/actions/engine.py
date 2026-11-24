@@ -110,11 +110,23 @@ def set_follow_up(
     if row is None:
         row = ActionFollowUp(action_key=action_key)
         db.add(row)
+        changed = True
+    else:
+        changed = (
+            row.status != status
+            or row.technician != technician
+            or row.comment != comment
+            or row.followed_on != followed_on
+        )
     row.status = status
     row.technician = technician
     row.comment = comment
     row.followed_on = followed_on
     row.updated_at = utcnow()
+    if changed and (status in {"en_cours", "fait"} or comment.strip()):
+        from app.history import record_manual_change
+
+        record_manual_change(db, action_key, status=status, technician=technician, comment=comment)
     db.commit()
     return row
 

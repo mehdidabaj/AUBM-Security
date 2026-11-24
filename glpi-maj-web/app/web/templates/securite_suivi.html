@@ -1,0 +1,12 @@
+{% if role_rank[user.role] >= role_rank["technicien"] %}
+<form method="post" action="/securite/suivi" class="suivi-bulletin">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="reference" value="{{ row.reference }}">
+  <input type="hidden" name="retour" value="{{ vue.lien }}">
+  <button type="submit" class="linkish">{% if row.suivi %}Retirer{% else %}Me concerne{% endif %}</button>
+</form>
+{% elif row.suivi %}
+<span class="badge ok">Suivi</span>
+{% else %}
+—
+{% endif %}

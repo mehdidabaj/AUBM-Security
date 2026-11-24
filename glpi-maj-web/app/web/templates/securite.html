@@ -1,13 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Sécurité{% endblock %}
 {% block content %}
-<div id="securite-live"{% if vue.en_cours %} hx-get="/securite?live=1&amp;lien={% if vue.lies_seulement %}parc{% endif %}&amp;n={{ vue.alertes|length + vue.avis|length }}&amp;etat=cours&amp;err={% if vue.erreur %}1{% else %}0{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
+<div id="securite-live"{% if vue.en_cours %} hx-get="/securite?live=1&amp;lien={{ vue.lien }}&amp;n={{ vue.alertes|length + vue.avis|length }}&amp;etat=cours&amp;err={% if vue.erreur %}1{% else %}0{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
 <section class="card">
   <h1>Avis et alertes de sécurité</h1>
-  {% if vue.lies_seulement %}
+  {% if vue.lien == "parc" %}
   <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours qui citent nommément un système ou un logiciel installé sur le parc.</p>
+  {% elif vue.lien == "logiciel" %}
+  <p class="muted">Avis et alertes qui concernent un logiciel.</p>
+  {% elif vue.lien == "materiel" %}
+  <p class="muted">Avis et alertes qui concernent un équipement ou un microprogramme.</p>
+  {% elif vue.lien == "ransomware" %}
+  <p class="muted">Avis et alertes qui concernent un rançongiciel.</p>
+  {% elif vue.lien == "suivis" %}
+  <p class="muted">Bulletins des sujets que vous avez marqués « Me concerne », même s'ils ne sont pas installés sur le parc.</p>
   {% else %}
-  <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, qu'ils concernent le parc ou non. Un bulletin « Parc » cite nommément un système ou un logiciel installé.</p>
+  <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, triés par type : rançongiciel, matériel, puis logiciel. « Me concerne » suit ensuite ce sujet, qu'il soit dans le parc ou non.</p>
   {% endif %}
   {% if vue.en_cours %}
   <p>Mise à jour des sources en cours. Cette page se remplit dès que le CERT-FR est lu.</p>
@@ -19,7 +27,11 @@
     <label>Affichage
       <select name="lien" onchange="this.form.submit()">
         <option value="">Tous</option>
-        <option value="parc" {% if vue.lies_seulement %}selected{% endif %}>Liés au parc</option>
+        <option value="parc" {% if vue.lien == "parc" %}selected{% endif %}>Liés au parc</option>
+        <option value="logiciel" {% if vue.lien == "logiciel" %}selected{% endif %}>Logiciel</option>
+        <option value="materiel" {% if vue.lien == "materiel" %}selected{% endif %}>Matériel</option>
+        <option value="ransomware" {% if vue.lien == "ransomware" %}selected{% endif %}>Rançongiciel</option>
+        <option value="suivis" {% if vue.lien == "suivis" %}selected{% endif %}>Mes suivis</option>
       </select>
     </label>
   </form>
@@ -28,17 +40,19 @@
 <section class="card">
   <h2>Alertes</h2>
   <table>
-    <thead><tr><th>Date</th><th>Référence</th><th>Titre</th><th>Parc</th></tr></thead>
+    <thead><tr><th>Date</th><th>Type</th><th>Référence</th><th>Titre</th><th>Parc</th><th>Suivi</th></tr></thead>
     <tbody>
       {% for row in vue.alertes %}
       <tr>
         <td>{{ row.revised }}</td>
+        <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
         <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
         <td>{{ row.title or "—" }}</td>
         <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
+        <td>{% include "securite_suivi.html" %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">{% if vue.lies_seulement and vue.lus %}Aucune alerte ne cite le parc.{% elif vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucune alerte récente. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
+      <tr><td colspan="6">{% if vue.lien == "parc" and vue.lus %}Aucune alerte ne cite le parc.{% elif vue.lien == "logiciel" and vue.lus %}Aucune alerte logiciel.{% elif vue.lien == "materiel" and vue.lus %}Aucune alerte matériel.{% elif vue.lien == "ransomware" and vue.lus %}Aucune alerte de rançongiciel.{% elif vue.lien == "suivis" and vue.lus %}Aucune alerte suivie.{% elif vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucune alerte récente. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -47,17 +61,19 @@
 <section class="card">
   <h2>Avis</h2>
   <table>
-    <thead><tr><th>Date</th><th>Référence</th><th>Titre</th><th>Parc</th></tr></thead>
+    <thead><tr><th>Date</th><th>Type</th><th>Référence</th><th>Titre</th><th>Parc</th><th>Suivi</th></tr></thead>
     <tbody>
       {% for row in vue.avis %}
       <tr>
         <td>{{ row.revised }}</td>
+        <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
         <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
         <td>{{ row.title or "—" }}</td>
         <td>{% if row.lie %}<span class="badge important">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
+        <td>{% include "securite_suivi.html" %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">{% if vue.lies_seulement and vue.lus %}Aucun avis ne cite le parc.{% elif vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucun avis récent. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
+      <tr><td colspan="6">{% if vue.lien == "parc" and vue.lus %}Aucun avis ne cite le parc.{% elif vue.lien == "logiciel" and vue.lus %}Aucun avis logiciel.{% elif vue.lien == "materiel" and vue.lus %}Aucun avis matériel.{% elif vue.lien == "ransomware" and vue.lus %}Aucun avis de rançongiciel.{% elif vue.lien == "suivis" and vue.lus %}Aucun avis suivi. Utilisez « Me concerne » sur un bulletin.{% elif vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucun avis récent. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

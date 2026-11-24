@@ -173,6 +173,12 @@ th { font-size: 0.82rem; color: var(--muted); }
 .progress-track span { display: block; height: 100%; background: var(--accent); }
 .progress-results { max-height: 28rem; overflow: auto; margin-top: 0.6rem; }
 .badge.lecture { background: #64748b; }
+.badge.logiciel, .badge.automatique { background: #1d4ed8; }
+.badge.materiel { background: #0f766e; }
+.badge.ransomware { background: var(--critique); }
+.badge.manuel { background: #6d28d9; }
+.suivi-bulletin { margin: 0; }
+.suivi-bulletin button { margin-top: 0; }
 button:disabled { opacity: 0.55; cursor: default; }
 .exports { display: flex; gap: 0.6rem; }
 .exports .button { margin-top: 0; }

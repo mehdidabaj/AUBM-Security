@@ -470,3 +470,98 @@ def test_page_securite_liste_avis_et_alertes_hors_parc(client, app, admin):
     assert "CERTFR-2026-AVI-0099" not in lies.text
     assert "CERTFR-2026-AVI-0100" not in lies.text
     assert "Liés au parc" in lies.text
+
+
+def test_types_et_suivi_hors_parc(client, app, admin):
+    from app.sources.cache import put_cache
+    from tests.conftest import csrf_from, login
+
+    login(client, "admin", "motdepasse-admin")
+    db = app.state.SessionLocal()
+    try:
+        put_cache(
+            db,
+            "certfr",
+            "bulletins",
+            {
+                "items": [
+                    {
+                        "reference": "CERTFR-2026-ALE-017",
+                        "title": "Campagne du rançongiciel LockBit",
+                        "alert": True,
+                        "revised": "2026-11-20",
+                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-017/",
+                    },
+                    {
+                        "reference": "CERTFR-2026-AVI-0200",
+                        "title": "Vulnérabilité dans Zoom",
+                        "alert": False,
+                        "revised": "2026-11-10",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0200/",
+                    },
+                    {
+                        "reference": "CERTFR-2026-AVI-0201",
+                        "title": "Multiples vulnérabilités dans Zoom",
+                        "alert": False,
+                        "revised": "2026-11-21",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0201/",
+                    },
+                    {
+                        "reference": "CERTFR-2026-AVI-0300",
+                        "title": "Multiples vulnérabilités dans FortiGate",
+                        "alert": False,
+                        "revised": "2026-11-01",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0300/",
+                    },
+                ],
+            },
+            origin="live",
+        )
+    finally:
+        db.close()
+
+    page = client.get("/securite")
+    assert page.text.find("LockBit") < page.text.find("FortiGate")
+    assert page.text.find("FortiGate") < page.text.find("Zoom")
+    ransom = client.get("/securite", params={"lien": "ransomware"})
+    assert "LockBit" in ransom.text
+    assert "Zoom" not in ransom.text
+    assert "FortiGate" not in ransom.text
+    materiel = client.get("/securite", params={"lien": "materiel"})
+    assert "FortiGate" in materiel.text
+    assert "Zoom" not in materiel.text
+    logiciel = client.get("/securite", params={"lien": "logiciel"})
+    assert "CERTFR-2026-AVI-0200" in logiciel.text
+    assert "LockBit" not in logiciel.text
+    assert "FortiGate" not in logiciel.text
+    parc = client.get("/securite", params={"lien": "parc"})
+    assert "Zoom" not in parc.text
+    assert "FortiGate" not in parc.text
+
+    suivi = client.post(
+        "/securite/suivi",
+        data={
+            "csrf_token": csrf_from(logiciel.text),
+            "reference": "CERTFR-2026-AVI-0200",
+            "retour": "logiciel",
+        },
+        follow_redirects=False,
+    )
+    assert suivi.status_code == 303
+    suivis = client.get("/securite", params={"lien": "suivis"})
+    assert "CERTFR-2026-AVI-0200" in suivis.text
+    assert "CERTFR-2026-AVI-0201" in suivis.text
+    assert "FortiGate" not in suivis.text
+    assert "LockBit" not in suivis.text
+
+    retire = client.post(
+        "/securite/suivi",
+        data={
+            "csrf_token": csrf_from(suivis.text),
+            "reference": "CERTFR-2026-AVI-0201",
+            "retour": "suivis",
+        },
+        follow_redirects=True,
+    )
+    assert "CERTFR-2026-AVI-0200" not in retire.text
+    assert "Aucun avis suivi" in retire.text

@@ -25,6 +25,27 @@
 </section>
 
 <section class="card">
+  <h2>Historique des mises à jour</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Origine</th><th>Logiciel</th><th>Avant</th><th>Après</th><th>Note</th></tr></thead>
+    <tbody>
+      {% for changement in detail.historique %}
+      <tr>
+        <td>{{ changement.detected_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><span class="badge {{ changement.origin }}">{% if changement.origin == "manuel" %}Administrateur{% else %}Automatique{% endif %}</span>{% if changement.actor %} {{ changement.actor }}{% endif %}</td>
+        <td>{{ changement.software_name }}</td>
+        <td>{{ changement.previous_version or "—" }}</td>
+        <td>{{ changement.new_version or "—" }}</td>
+        <td>{{ changement.note }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Aucune mise à jour constatée. La première collecte sert de référence ; l'écart apparaît à la vérification suivante, ou quand un administrateur enregistre un suivi.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
   <h2>Actions</h2>
   {% for item in detail.actions %}
   <article class="action">
