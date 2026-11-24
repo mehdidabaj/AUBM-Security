@@ -269,16 +269,16 @@ def test_postes_et_logiciels_suivent_la_collecte(client, app, admin):
     assert "Collecte en cours" in postes.text
     assert 'hx-trigger="every 2s"' in postes.text
     assert "PC-COMPTA-01" not in postes.text
-    assert client.get("/postes/77").status_code == 200
+    fiche = client.get("/postes/77")
+    assert fiche.status_code == 200
+    assert "Google Chrome" in fiche.text
+    assert "Bidule Interne" in fiche.text
+    assert "Logiciels relevés" in fiche.text
+    assert 'href="/logiciels"' not in fiche.text
 
     assert client.get("/postes?live=1&lus=1&soft=2&etat=cours").status_code == 204
-
-    logiciels = client.get("/logiciels")
-    assert "Google Chrome" in logiciels.text
-    assert "Bidule Interne" in logiciels.text
-    assert 'id="logiciels-live"' in logiciels.text
-    assert 'hx-trigger="every 2s"' in logiciels.text
-    assert client.get("/logiciels?live=1&lus=1&soft=2&etat=cours").status_code == 204
+    assert client.get("/logiciels").status_code == 404
+    assert client.get("/logiciels/a-associer").status_code == 404
 
 
 def test_annulation_et_historique(client, app, admin):
@@ -349,57 +349,6 @@ def test_erreur_html_est_echappee(app):
     assert response.status_code == 400
     assert "<script>" not in response.text
     assert "&lt;script&gt;" in response.text
-
-
-def test_association_manuelle(client, app):
-    from app.auth.service import create_user
-
-    db = app.state.SessionLocal()
-    try:
-        create_user(db, "tech", "motdepasse-tech", "technicien")
-    finally:
-        db.close()
-    login(client, "tech", "motdepasse-tech")
-    page = client.get("/logiciels")
-    assert page.status_code == 200
-    assert "Google Chrome" in page.text
-    unknown = client.get("/logiciels/a-associer")
-    assert unknown.status_code == 200
-    assert "Logiciels à associer" in unknown.text
-
-
-def test_logiciels_affiche_la_severite_de_la_faille(client, app, admin):
-    from app.sources.cache import put_cache
-
-    login(client, "admin", "motdepasse-admin")
-    db = app.state.SessionLocal()
-    try:
-        put_cache(
-            db,
-            "certfr",
-            "catalog",
-            {
-                "cves": {
-                    "CVE-2026-9999": {
-                        "id": "CVE-2026-9999",
-                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
-                        "alert": True,
-                        "cvss": 8.8,
-                        "severite": "critique",
-                        "products": ["chrome"],
-                    }
-                }
-            },
-            origin="live",
-        )
-    finally:
-        db.close()
-    page = client.get("/logiciels")
-    assert page.status_code == 200
-    assert "Sévérité" in page.text
-    assert 'class="badge critique"' in page.text
-    assert "Critique" in page.text
-    assert "8.8" in page.text
 
 
 def test_page_securite_liste_avis_et_alertes_hors_parc(client, app, admin):

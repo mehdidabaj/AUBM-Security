@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.actions.engine import follow_up_for, is_up_to_date, priority_of
-from app.actions.mapping import resolve_slug, unmatched_names
+from app.actions.mapping import resolve_slug
 from app.actions.rules import include_low
 from app.actions.versions import is_outdated, parse_version
 from app.glpi.service import glpi_computer_url, latest_successful, visible_run
@@ -276,27 +276,6 @@ def software_rows(db: Session) -> list[dict]:
             }
         )
     return rows
-
-
-def unknown_software(db: Session) -> list[dict]:
-    """Logiciels lus qui ne correspondent à aucun produit suivi."""
-    from app.actions.mapping import resolve_slug
-
-    run = visible_run(db)
-    if run is None:
-        return []
-    counts: Counter[str] = Counter()
-    for computer in _computers(db, run):
-        seen: set[str] = set()
-        for software in computer.software:
-            slug = resolve_slug(db, software.name)
-            if slug and parse_version(software.version):
-                continue
-            name = (software.name or "").strip()
-            if name and name not in seen:
-                seen.add(name)
-                counts[name] += 1
-    return [{"nom": name, "postes": count} for name, count in counts.most_common()]
 
 
 def journal(db: Session, limit: int = 30) -> list[SourceRun]:

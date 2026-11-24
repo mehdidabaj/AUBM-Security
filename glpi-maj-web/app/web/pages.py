@@ -7,10 +7,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.actions.mapping import set_mapping, unmatched_names
 from app.actions.rules import DEFAULT_FIXED_RULES, fixed_rules, include_low, stale_days, threshold
 from app.settings_store import get_setting, set_setting
-from app.sources.catalog import PRODUCTS, SOURCE_LABELS
+from app.sources.catalog import SOURCE_LABELS
 from app.web.deps import enforce_csrf, get_db, require_user
 from app.web.queries import (
     STATUS_LABELS,
@@ -20,7 +19,6 @@ from app.web.queries import (
     dashboard,
     journal,
     security_bulletins,
-    software_rows,
 )
 from app.web.routes import render
 
@@ -120,27 +118,6 @@ async def suivi(glpi_id: int, request: Request, db: Session = Depends(get_db)) -
     return RedirectResponse(f"/postes/{glpi_id}", status_code=303)
 
 
-@router.get("/logiciels", response_class=HTMLResponse)
-def logiciels(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    require_user(request, db)
-    if _live_inchange(request, db):
-        return Response(status_code=204)
-    from app.glpi.service import inventory_counts, visible_run
-    from app.web.queries import unknown_software
-
-    run = visible_run(db)
-    lus, soft = inventory_counts(db, run)
-    return render(
-        request,
-        "logiciels.html",
-        rows=software_rows(db),
-        inconnus=unknown_software(db),
-        en_cours=run is not None and run.status == "running",
-        postes_lus=lus,
-        installations=soft,
-    )
-
-
 _SECURITY_LIENS = {"", "parc", "logiciel", "materiel", "ransomware", "suivis"}
 
 
@@ -180,37 +157,6 @@ async def suivi_securite(request: Request, db: Session = Depends(get_db)) -> Red
     toggle_watch(db, title, user.username)
     target = "/securite" if not retour else f"/securite?lien={retour}"
     return RedirectResponse(target, status_code=303)
-
-
-@router.get("/logiciels/a-associer", response_class=HTMLResponse)
-def a_associer(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    require_user(request, db)
-    from app.glpi.service import visible_run
-
-    run = visible_run(db)
-    names = []
-    if run is not None:
-        from app.web.queries import _computers
-
-        names = [item.name for computer in _computers(db, run) for item in computer.software]
-    return render(
-        request,
-        "associer.html",
-        inconnus=unmatched_names(db, names),
-        produits=list(PRODUCTS.values()),
-    )
-
-
-@router.post("/logiciels/a-associer")
-async def associer(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
-    await enforce_csrf(request, db)
-    require_user(request, db, "technicien")
-    form = await request.form()
-    try:
-        set_mapping(db, str(form.get("nom") or ""), str(form.get("produit") or ""))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse("/logiciels/a-associer", status_code=303)
 
 
 @router.get("/sources", response_class=HTMLResponse)

@@ -2,7 +2,7 @@
 
 Application interne qui lit, pour chaque poste GLPI, son nom, son service, son système et ses logiciels, les compare à des sources publiques (winget, GitHub Releases, MSRC et CERT-FR) et présente les actions à mener. Elle tourne sur le serveur Debian qui héberge déjà GLPI, sans Docker.
 
-L'interface est en français : tableau de bord, postes, logiciels, sources, paramètres, export Excel et rapport PDF. Le bouton « Lancer une vérification » lit le parc en arrière-plan. La première collecte interroge les ordinateurs, puis seulement les versions qu'ils installent. La suivante ne relit que les postes dont la date GLPI a changé et reprend les autres. Le pourcentage suit le volume annoncé par GLPI. Les pages se mettent à jour quand un poste ou un logiciel apparaît. « Arrêter la vérification » interrompt la lecture. Les dix dernières vérifications sont conservées (réglable dans Paramètres). À 100 %, le tableau de bord se recharge.
+L'interface est en français : tableau de bord, postes, sécurité, sources, paramètres, export Excel et rapport PDF. Les logiciels restent sur la fiche de chaque poste. Le bouton « Lancer une vérification » lit le parc en arrière-plan. La première collecte interroge les ordinateurs, puis seulement les versions qu'ils installent. La suivante ne relit que les postes dont la date GLPI a changé et reprend les autres. Le pourcentage suit le volume annoncé par GLPI. Les pages se mettent à jour quand un poste ou un logiciel apparaît. « Arrêter la vérification » interrompt la lecture. Les dix dernières vérifications sont conservées (réglable dans Paramètres). À 100 %, le tableau de bord se recharge.
 
 ## Prérequis
 

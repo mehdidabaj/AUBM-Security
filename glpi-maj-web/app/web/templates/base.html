@@ -20,9 +20,7 @@
       <nav>
         <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Tableau de bord</a>
         <a href="/postes" {% if request.url.path.startswith("/postes") %}class="active"{% endif %}>Postes</a>
-        <a href="/logiciels" {% if request.url.path == "/logiciels" %}class="active"{% endif %}>Logiciels</a>
         <a href="/securite" {% if request.url.path.startswith("/securite") %}class="active"{% endif %}>Sécurité</a>
-        <a href="/logiciels/a-associer" {% if request.url.path == "/logiciels/a-associer" %}class="active"{% endif %}>À associer</a>
         <a href="/sources" {% if request.url.path.startswith("/sources") %}class="active"{% endif %}>Sources</a>
         {% if role_rank[user.role] >= role_rank["admin"] %}
         <a href="/parametres" {% if request.url.path.startswith("/parametres") %}class="active"{% endif %}>Paramètres</a>
