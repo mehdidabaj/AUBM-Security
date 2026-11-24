@@ -11,8 +11,12 @@ _VERSION = re.compile(r"^PackageVersion:\s*(\S+)\s*$", re.MULTILINE)
 
 
 def sparse_path(package_id: str) -> str:
-    publisher = package_id.split(".", 1)[0]
-    return f"manifests/{publisher[0].lower()}/{publisher}"
+    """Dossier du paquet, pas tout l'éditeur : Microsoft contient des milliers de manifestes."""
+    publisher, _, name = package_id.partition(".")
+    folder = f"manifests/{publisher[0].lower()}/{publisher}"
+    if not name:
+        return folder
+    return f"{folder}/{name}"
 
 
 def winget_commands(dest: Path, package_ids: list[str], cloned: bool) -> list[list[str]]:

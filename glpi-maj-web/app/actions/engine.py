@@ -46,8 +46,16 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, 
     important = threshold(db, "severity_important", 7)
     window = stale_days(db)
     db.execute(delete(ComputedAction).where(ComputedAction.check_run_id == run.id))
+    from sqlalchemy.orm import selectinload
+
+    computers = db.scalars(
+        select(ComputerRecord)
+        .where(ComputerRecord.check_run_id == run.id)
+        .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
+        .order_by(ComputerRecord.glpi_id)
+    ).all()
     created: list[ComputedAction] = []
-    for computer in run.computers:
+    for computer in computers:
         created.extend(_computer_actions(db, run, computer, rules, critical, important, window, moment))
     db.add_all(created)
     db.flush()
@@ -332,7 +340,10 @@ def _severity(cves: list[dict], eol: bool, critical: float, important: float) ->
 
 
 def _cves_for(db: Session, slug: str) -> list[dict]:
-    certfr = payload_of(get_cache(db, "certfr", "catalog")).get("cves") or {}
+    certfr = db.info.get("certfr_cves")
+    if certfr is None:
+        certfr = payload_of(get_cache(db, "certfr", "catalog")).get("cves") or {}
+        db.info["certfr_cves"] = certfr
     if not isinstance(certfr, dict):
         return []
     found = []

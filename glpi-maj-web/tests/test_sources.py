@@ -39,8 +39,8 @@ def test_commandes_winget_et_version_la_plus_haute(tmp_path):
     commands = winget_commands(dest, ["Google.Chrome", "Notepad++.Notepad++"], cloned=False)
     assert commands[0][:6] == ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse"]
     assert "https://github.com/microsoft/winget-pkgs.git" in commands[0]
-    assert "manifests/g/Google" in commands[1]
-    assert "manifests/n/Notepad++" in commands[1]
+    assert "manifests/g/Google/Chrome" in commands[1]
+    assert "manifests/n/Notepad++/Notepad++" in commands[1]
     assert commands[2][-2:] == ["pull", "--ff-only"]
 
     chrome = dest / "manifests" / "g" / "Google"
@@ -299,8 +299,12 @@ def test_echec_conserve_les_donnees_et_alerte_au_dela_de_trois_jours(app):
 
 
 def test_msrc_et_endoflife_pour_les_produits_presents(app):
+    msrc_calls = {"n": 0}
+
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
+        if "api.msrc.microsoft.com" in url:
+            msrc_calls["n"] += 1
         if url.endswith("/cvrf/v3.0/updates"):
             return httpx.Response(200, json=json.loads(_read("msrc_updates.json")))
         if url.endswith("/cvrf/2026-Nov"):
@@ -335,6 +339,16 @@ def test_msrc_et_endoflife_pour_les_produits_presents(app):
         assert payload_of(get_cache(db, "msrc", "windows-26h2"))["version"] == "26300.9974"
         assert payload_of(get_cache(db, "msrc", "m365"))["version"] == "16.0.20527.20196"
         assert get_cache(db, "endoflife", "windows-10") is None
+        again = update_sources(
+            db,
+            app.state.settings,
+            names=["Windows 11", "Microsoft 365 Apps"],
+            http=http,
+            sleep=lambda _seconds: None,
+            now=NOW,
+        )
+        assert again.status == "success"
+        assert msrc_calls["n"] == 2
         assert get_cache(db, "nvd", "chrome") is None
     finally:
         db.close()
@@ -354,6 +368,41 @@ def test_plancher_strict_tant_que_la_version_publiee_ne_le_depasse_pas(app):
         assert target["source"] == "winget"
         assert target["version"] == "26.003.1"
         assert version_target(db, "java8")["version"] == "8u511"
+    finally:
+        db.close()
+
+
+def test_un_depot_github_absent_laisse_passer_les_autres(app):
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "notepad-plus-plus" in url:
+            return httpx.Response(200, json=json.loads(_read("github_notepad.json")), headers={"ETag": "abc"})
+        return httpx.Response(404, text=url)
+
+    db = app.state.SessionLocal()
+    try:
+        from sqlalchemy import select
+
+        from app.models.sources import SourceRun
+        from app.settings_store import set_setting
+
+        set_setting(db, "sources_enabled", {"winget": False, "github": True, "msrc": False, "certfr": False})
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        run = update_sources(
+            db,
+            app.state.settings,
+            names=["Notepad++", "PowerShell 7"],
+            http=http,
+            sleep=lambda _seconds: None,
+            now=NOW,
+        )
+        assert run.status == "success", run.message
+        assert payload_of(get_cache(db, "github", "notepadpp"))["version"] == "8.9.7"
+        github = db.scalar(select(SourceRun).where(SourceRun.source == "github"))
+        assert github is not None
+        assert github.status == "success"
+        assert "Incomplet" in github.message
+        assert get_cache(db, "github", "powershell").last_error
     finally:
         db.close()
 

@@ -458,6 +458,7 @@ def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRec
             )
         )
     }
+    ready: list[tuple[ComputerRecord, ComputerRecord]] = []
     for glpi_id in ids:
         source = sources.get(glpi_id)
         target = targets.get(glpi_id)
@@ -468,9 +469,13 @@ def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRec
         target.os_build = source.os_build
         target.location = ""
         target.computer_type = ""
-        db.flush()
-        db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id == target.id))
-        db.execute(delete(AgentRecord).where(AgentRecord.computer_id == target.id))
+        ready.append((target, source))
+    if not ready:
+        return
+    target_ids = [target.id for target, _source in ready]
+    db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id.in_(target_ids)))
+    db.execute(delete(AgentRecord).where(AgentRecord.computer_id.in_(target_ids)))
+    for target, source in ready:
         for software in source.software:
             db.add(
                 SoftwareInstall(

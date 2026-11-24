@@ -40,6 +40,7 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
         "OperatingSystem": payload.get("OperatingSystem", []),
         "OperatingSystemVersion": payload.get("OperatingSystemVersion", []),
         "OperatingSystemKernelVersion": payload.get("OperatingSystemKernelVersion", []),
+        "Group": payload.get("Group", []),
     }
 
     def rows_of(request: httpx.Request) -> tuple[str, list]:
@@ -153,6 +154,20 @@ def test_collecte_paginee_et_session(app):
     assert computers[2].agent is None
     assert sink["os_expand"] == ["true", "true", "true"]
     assert "OperatingSystem" not in sink.get("fetched", {})
+
+
+def test_identifiant_de_service_resolu_a_part(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["computers"][0]["groups_id"] = 4
+    payload["Group"] = [{"id": 4, "completename": "Compta"}]
+    sink: dict = {}
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink)))
+    with GlpiClient(app.state.settings, http=http, page_size=2) as client:
+        computers = client.collect()
+    assert computers[0].group_name == "Compta"
+    assert sink["fetched"]["Group"] == [4]
 
 
 def test_identifiant_de_systeme_remplace_par_son_nom(app):

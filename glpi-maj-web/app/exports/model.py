@@ -12,7 +12,7 @@ from app.actions.versions import highest_version, parse_version
 from app.config import Settings
 from app.glpi.service import glpi_computer_url, latest_successful
 from app.sources.catalog import PRODUCTS
-from app.web.queries import SEVERITY_LABELS, actions_by_computer, dashboard, software_rows
+from app.web.queries import SEVERITY_LABELS, _computers, actions_by_computer, dashboard, software_rows
 from app.sources.cache import source_overview
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -39,7 +39,7 @@ def build_model(db: Session, settings: Settings) -> dict:
     if run is not None:
         grouped = actions_by_computer(db, run)
         count_low = include_low(db)
-        for computer in run.computers:
+        for computer in _computers(db, run):
             actions = grouped.get(computer.glpi_id, [])
             cellules = _cells(db, computer, actions, produits)
             autres = [item.title for item in actions if item.severity == "autre"]

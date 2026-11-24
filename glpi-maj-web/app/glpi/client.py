@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections import defaultdict
 from datetime import datetime
 
@@ -38,7 +39,7 @@ class GlpiClient:
         self.page_size = page_size
         self.session_token: str | None = None
         self._owns_client = http is None
-        self.http = http or httpx.Client(timeout=httpx.Timeout(30.0))
+        self.http = http or httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0))
         self._dropdown_names: dict[tuple[str, int], str] = {}
 
     def __enter__(self) -> "GlpiClient":
@@ -114,9 +115,10 @@ class GlpiClient:
 
         computers = self._paginate(
             "Computer",
-            {"expand_dropdowns": "true"},
+            {},
             on_page=lambda read, total, chunk: report(0, "ordinateurs", read, total, chunk),
         )
+        computers = self._resolve_group_names(computers)
         os_rows: list[dict] = []
         link_rows: list[dict] = []
         unchanged, pending = _split_changes(computers, known)
@@ -184,6 +186,33 @@ class GlpiClient:
             copy["items_id"] = computer_id
             kept.append(copy)
         return kept
+
+    def _resolve_group_names(self, rows: list[dict]) -> list[dict]:
+        """Le service est lu à part : expand_dropdowns sur chaque poste développe tous les liens."""
+        pending: set[int] = set()
+        for row in rows:
+            number = _bare_id(row.get("groups_id"))
+            if number is not None and ("Group", number) not in self._dropdown_names:
+                pending.add(number)
+        if pending:
+            found: dict[int, str] = {}
+            for item in self._fetch_many("Group", sorted(pending)):
+                try:
+                    found[int(item["id"])] = label(item.get("completename") or item.get("name"))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            for number in pending:
+                self._dropdown_names[("Group", number)] = found.get(number, "")
+        if not any(_bare_id(row.get("groups_id")) is not None for row in rows):
+            return rows
+        resolved: list[dict] = []
+        for row in rows:
+            copy = dict(row)
+            number = _bare_id(copy.get("groups_id"))
+            if number is not None:
+                copy["groups_id"] = self._dropdown_names.get(("Group", number), "")
+            resolved.append(copy)
+        return resolved
 
     def _resolve_os_labels(self, rows: list[dict]) -> list[dict]:
         """Remplace un identifiant nu (3) par le nom du système, de la version et du noyau.
@@ -272,11 +301,28 @@ class GlpiClient:
                 break
         return rows
 
-    def _request(self, method: str, resource: str, params: dict | None = None, *, renew: bool = True) -> httpx.Response:
+    def _request(
+        self,
+        method: str,
+        resource: str,
+        params: dict | None = None,
+        *,
+        renew: bool = True,
+        attempt: int = 0,
+    ) -> httpx.Response:
         headers = {"User-Agent": USER_AGENT, "App-Token": self.settings.glpi_app_token}
         if self.session_token:
             headers["Session-Token"] = self.session_token
-        response = self.http.request(method, f"{self.base}/{resource}", params=params, headers=headers)
+        try:
+            response = self.http.request(method, f"{self.base}/{resource}", params=params, headers=headers)
+        except httpx.HTTPError:
+            if attempt >= 2:
+                raise
+            time.sleep(0.4 * (attempt + 1))
+            return self._request(method, resource, params=params, renew=renew, attempt=attempt + 1)
+        if response.status_code in {502, 503, 504} and attempt < 2:
+            time.sleep(0.4 * (attempt + 1))
+            return self._request(method, resource, params=params, renew=renew, attempt=attempt + 1)
         if renew and resource != "initSession" and _error_code(response) in SESSION_ERRORS:
             self.session_token = None
             self.init_session()

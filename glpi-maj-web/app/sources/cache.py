@@ -48,6 +48,8 @@ def put_cache(
     row.fetched_at = moment
     if checked:
         row.checked_at = moment
+    db.info.pop("source_payloads", None)
+    db.info.pop("certfr_cves", None)
     db.commit()
     return row
 
@@ -64,6 +66,8 @@ def mark_error(db: Session, source: str, cache_key: str, message: str) -> None:
         row = SourceCache(source=source, cache_key=cache_key, payload_json="{}", origin="live")
         db.add(row)
     row.last_error = message
+    db.info.pop("source_payloads", None)
+    db.info.pop("certfr_cves", None)
     db.commit()
 
 
@@ -87,18 +91,31 @@ def remember_version(
     )
 
 
+def _source_payloads(db: Session) -> dict[tuple[str, str], dict]:
+    """Charge une fois les versions mises en cache pour toute la requête."""
+    cached = db.info.get("source_payloads")
+    if cached is None:
+        cached = {}
+        rows = db.scalars(select(SourceCache).where(SourceCache.source.in_(("msrc", "github", "winget", "fallback"))))
+        for row in rows:
+            cached[(row.source, row.cache_key)] = payload_of(row)
+        db.info["source_payloads"] = cached
+    return cached
+
+
 def version_target(db: Session, slug: str) -> dict | None:
     """Version à atteindre : donnée vivante, sinon plancher du référentiel de secours."""
     product = PRODUCTS.get(slug)
+    payloads = _source_payloads(db)
     live = None
     live_source = None
     for source in ("msrc", "github", "winget"):
-        data = payload_of(get_cache(db, source, slug))
+        data = payloads.get((source, slug)) or {}
         if data.get("version"):
             live = data
             live_source = source
             break
-    floor = payload_of(get_cache(db, "fallback", slug))
+    floor = payloads.get(("fallback", slug)) or {}
     if live and floor.get("version") and product is not None and product.version_mode == "gt":
         compared = compare_versions(live["version"], floor["version"])
         if compared is None or compared <= 0:
@@ -111,7 +128,7 @@ def version_target(db: Session, slug: str) -> dict | None:
 
 
 def is_end_of_life(db: Session, slug: str) -> bool:
-    return bool(payload_of(get_cache(db, "fallback", slug)).get("eol"))
+    return bool((_source_payloads(db).get(("fallback", slug)) or {}).get("eol"))
 
 
 def source_overview(db: Session, now: datetime | None = None) -> list[dict[str, Any]]:

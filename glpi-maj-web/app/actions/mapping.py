@@ -10,6 +10,7 @@ from app.sources.catalog import PRODUCTS, match_key, match_name
 
 
 def seed_mappings(db: Session) -> int:
+    db.info.pop("slug_index", None)
     seen = set(db.scalars(select(SoftwareMapping.glpi_name)))
     created = 0
     for product in PRODUCTS.values():
@@ -29,9 +30,12 @@ def resolve_slug(db: Session, name: str) -> str | None:
     key = match_key(name)
     if not key:
         return None
-    mapping = db.scalar(select(SoftwareMapping).where(SoftwareMapping.glpi_name == key))
-    if mapping is not None:
-        return mapping.product_slug
+    index = db.info.get("slug_index")
+    if index is None:
+        index = {row.glpi_name: row.product_slug for row in db.scalars(select(SoftwareMapping))}
+        db.info["slug_index"] = index
+    if key in index:
+        return index[key]
     product = match_name(name)
     return product.slug if product is not None else None
 
@@ -59,6 +63,7 @@ def set_mapping(db: Session, name: str, product_slug: str) -> SoftwareMapping:
     else:
         row.product_slug = product_slug
         row.manual = 1
+    db.info.pop("slug_index", None)
     db.commit()
     return row
 

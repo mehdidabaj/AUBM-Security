@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.actions.engine import follow_up_for, is_up_to_date, priority_of
@@ -150,15 +150,22 @@ def dashboard(db: Session, settings: Settings) -> dict:
                 silent.append(computer.name)
     evolution = []
     runs = list(db.scalars(select(CheckRun).where(CheckRun.status == "success").order_by(CheckRun.id)))
+    totals: dict[int, int] = {}
+    run_ids = [item.id for item in runs]
+    if run_ids:
+        for run_id, total in db.execute(
+            select(ComputedAction.check_run_id, func.count())
+            .where(ComputedAction.check_run_id.in_(run_ids), ComputedAction.severity != "autre")
+            .group_by(ComputedAction.check_run_id)
+        ):
+            totals[int(run_id)] = int(total)
     for item in runs:
-        total = len(
-            [
-                action
-                for action in db.scalars(select(ComputedAction).where(ComputedAction.check_run_id == item.id))
-                if action.severity != "autre"
-            ]
+        evolution.append(
+            {
+                "label": item.finished_at.strftime("%d/%m %H:%M") if item.finished_at else str(item.id),
+                "actions": totals.get(item.id, 0),
+            }
         )
-        evolution.append({"label": item.finished_at.strftime("%d/%m %H:%M") if item.finished_at else str(item.id), "actions": total})
     summary = json.loads(run.summary_json or "{}")
     return {
         "run": run,

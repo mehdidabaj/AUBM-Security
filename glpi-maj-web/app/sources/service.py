@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -47,9 +49,18 @@ from app.sources.parsers import (
 from app.sources.winget import update_winget
 from app.timeutils import utcnow
 
+logger = logging.getLogger(__name__)
 FALLBACK_PATH = Path(__file__).resolve().parents[1] / "referentiel" / "secours.json"
 NVD_RETRY = {403, 429, 503}
 VULN_RECENT_DAYS = 120
+
+
+class SourceWarning(Exception):
+    """Une source a lu une partie des éléments. Le compte est conservé."""
+
+    def __init__(self, count: int, detail: str) -> None:
+        self.count = count
+        super().__init__(detail)
 
 
 def load_fallback_if_needed(db: Session, path: Path | None = None) -> int:
@@ -179,14 +190,17 @@ def probe_source(settings: Settings, key: str, http: httpx.Client | None = None)
     own = http is None
     client = http or make_client()
     try:
-        params = None
         headers = {"User-Agent": USER_AGENT}
         if key == "github" and settings.github_token:
             headers["Authorization"] = f"Bearer {settings.github_token}"
-        response = client.get(url, params=params, headers=headers, timeout=20)
-        if response.status_code < 400:
-            return {"ok": True, "message": f"{key} répond (HTTP {response.status_code})."}
-        return {"ok": False, "message": f"{key} a répondu HTTP {response.status_code}."}
+        request = client.build_request("GET", url, headers=headers)
+        response = client.send(request, stream=True, timeout=20)
+        try:
+            if response.status_code < 400:
+                return {"ok": True, "message": f"{key} répond (HTTP {response.status_code})."}
+            return {"ok": False, "message": f"{key} a répondu HTTP {response.status_code}."}
+        finally:
+            response.close()
     except Exception as exc:
         return {"ok": False, "message": f"{key} est injoignable : {exc}"}
     finally:
@@ -200,12 +214,19 @@ def launch_source_update(app) -> None:
     def worker() -> None:
         db = app.state.SessionLocal()
         try:
-            update_sources(db, app.state.settings)
+            try:
+                update_sources(db, app.state.settings)
+            except Exception:
+                logger.exception("La mise à jour des sources a échoué")
+                return
             from app.glpi.service import run_verification
             from app.notify import notify_changes
 
-            run_verification(db, app.state.settings)
-            notify_changes(db, app.state.settings)
+            try:
+                run_verification(db, app.state.settings)
+                notify_changes(db, app.state.settings)
+            except Exception:
+                logger.exception("La vérification après les sources a échoué")
         finally:
             db.close()
 
@@ -217,8 +238,16 @@ def _execute(db, settings, client, key, products: list[Product], sleep, limiter,
     run = SourceRun(source=key, started_at=started, status="running", message=f"Début {started:%Y-%m-%d %H:%M:%S}")
     db.add(run)
     db.commit()
+    warning = ""
     try:
         count = _dispatch(db, settings, client, key, products, sleep, limiter, runner, now)
+    except SourceWarning as exc:
+        count = exc.count
+        warning = str(exc)
+        ok = count > 0
+        run.status = "success" if ok else "error"
+        run.items_count = count
+        run.error = None if ok else warning
     except Exception as exc:
         message = str(exc)
         run.status = "error"
@@ -236,6 +265,8 @@ def _execute(db, settings, client, key, products: list[Product], sleep, limiter,
         f"Début {run.started_at:%Y-%m-%d %H:%M:%S}, fin {run.finished_at:%Y-%m-%d %H:%M:%S}, "
         f"{run.items_count} élément(s)."
     )
+    if warning and ok:
+        run.message += f" Incomplet : {warning}"
     if run.error:
         run.message += f" Erreur : {run.error}"
     db.commit()
@@ -266,10 +297,23 @@ def _wanted(products: list[Product], predicate) -> list[Product]:
     return [product for product in products if predicate(product)]
 
 
+def _fresh_today(db, source: str, cache_key: str, now: datetime) -> bool:
+    cached = get_cache(db, source, cache_key)
+    return bool(
+        cached
+        and cached.checked_at
+        and cached.checked_at.date() == now.date()
+        and not cached.last_error
+        and payload_of(cached)
+    )
+
+
 def _collect_winget(db, settings, products, runner, now) -> int:
     wanted = _wanted(products, lambda product: product.winget_id)
     if not wanted:
         return 0
+    if all(_fresh_today(db, "winget", product.slug, now) for product in wanted):
+        return len(wanted)
     dest = Path(settings.data_dir) / "sources" / "winget"
     versions = update_winget(dest, [product.winget_id for product in wanted if product.winget_id], runner)
     by_id = {product.winget_id: product for product in wanted}
@@ -285,6 +329,7 @@ def _collect_winget(db, settings, products, runner, now) -> int:
 
 def _collect_github(db, settings, client, products, sleep, now) -> int:
     count = 0
+    failures: list[str] = []
     for product in _wanted(products, lambda item: item.github):
         cached = get_cache(db, "github", product.slug)
         if cached and cached.checked_at and cached.checked_at.date() == now.date() and not cached.last_error:
@@ -295,20 +340,24 @@ def _collect_github(db, settings, client, products, sleep, now) -> int:
             headers["Authorization"] = f"Bearer {settings.github_token}"
         if cached and cached.etag:
             headers["If-None-Match"] = cached.etag
-        response = get_with_retries(
-            client,
-            GITHUB_RELEASE.format(repo=product.github),
-            headers=headers,
-            sleep=sleep,
-        )
-        if response.status_code == 304 and cached is not None:
-            mark_checked(db, cached, now)
-            count += 1
+        try:
+            response = get_with_retries(
+                client,
+                GITHUB_RELEASE.format(repo=product.github),
+                headers=headers,
+                sleep=sleep,
+            )
+            if response.status_code == 304 and cached is not None:
+                mark_checked(db, cached, now)
+                count += 1
+                continue
+            if response.status_code >= 400:
+                raise RuntimeError(f"GitHub a répondu HTTP {response.status_code} pour {product.github}.")
+            parsed = parse_github_release(response.json())
+        except Exception as exc:
+            mark_error(db, "github", product.slug, str(exc))
+            failures.append(f"{product.label} : {exc}")
             continue
-        if response.status_code >= 400:
-            mark_error(db, "github", product.slug, f"GitHub a répondu HTTP {response.status_code} pour {product.github}.")
-            raise RuntimeError(f"GitHub a répondu HTTP {response.status_code} pour {product.github}.")
-        parsed = parse_github_release(response.json())
         put_cache(
             db,
             "github",
@@ -319,6 +368,8 @@ def _collect_github(db, settings, client, products, sleep, now) -> int:
             now=now,
         )
         count += 1
+    if failures:
+        raise SourceWarning(count, " ; ".join(failures))
     return count
 
 
@@ -375,7 +426,15 @@ def _slug_for_cycle(family: str, cycle: str, wanted: set[str]) -> str | None:
 def _collect_msrc(db, client, products, sleep, now) -> int:
     if not any(product.triggers_msrc for product in products):
         return 0
-    listing = get_with_retries(client, MSRC_UPDATES, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, sleep=sleep)
+    if _fresh_today(db, "msrc", "catalog", now):
+        return 1
+    listing = get_with_retries(
+        client,
+        MSRC_UPDATES,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        timeout=120,
+        sleep=sleep,
+    )
     if listing.status_code >= 400:
         raise RuntimeError(f"MSRC a répondu HTTP {listing.status_code}.")
     body = listing.json()
@@ -388,6 +447,7 @@ def _collect_msrc(db, client, products, sleep, now) -> int:
         client,
         f"https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/{identifier}",
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        timeout=120,
         sleep=sleep,
     )
     if document.status_code >= 400:
@@ -523,10 +583,12 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
     )
     if lists_ready and catalog_ready:
         return len(listed_items)
+    _dire(db, "Téléchargement des avis CERT-FR")
     avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
     alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
     bulletins = _recent_bulletins(avis, alertes, products, now)
     put_cache(db, "certfr", "bulletins", {"items": bulletins}, origin="live", now=now)
+    _dire(db, f"Avis CERT-FR enregistrés ({len(bulletins)}). Lecture des fiches.")
     latest = _certfr_latest_rows(avis, alertes, products)
     chosen = {slug: str(row.get("reference") or "") for slug, row in latest.items()}
     cves: dict[str, dict] = {}
@@ -561,9 +623,20 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
     return len(bulletins)
 
 
+def _dire(db, texte: str) -> None:
+    parent = db.scalar(
+        select(SourceRun).where(SourceRun.source == "toutes", SourceRun.status == "running").order_by(SourceRun.id.desc())
+    )
+    if parent is None:
+        return
+    parent.message = texte
+    db.commit()
+
+
 def _recent_bulletins(avis: list, alertes: list, products: list[Product], now: datetime) -> list[dict]:
     """Avis et alertes des derniers mois, même sans logiciel du parc."""
     horizon = (now - timedelta(days=VULN_RECENT_DAYS)).date()
+    matcher = _SlugMatcher(products)
     rows: list[dict] = []
     seen: set[str] = set()
     for kind, items in (("alerte", alertes), ("avis", avis)):
@@ -586,7 +659,7 @@ def _recent_bulletins(avis: list, alertes: list, products: list[Product], now: d
                     "alert": kind == "alerte",
                     "revised": revised.date().isoformat(),
                     "url": f"{CERTFR_SITE}/{kind}/{reference}/",
-                    "products": sorted(_slugs_in(title, products)),
+                    "products": sorted(matcher.slugs(title)),
                 }
             )
     rows.sort(key=lambda item: (item["revised"], item["alert"]), reverse=True)
@@ -633,6 +706,7 @@ def _certfr_index(client, url: str, sleep) -> list:
 def _certfr_latest_rows(avis: list, alertes: list, products: list[Product]) -> dict[str, dict]:
     """Le bulletin le plus récent de chaque logiciel suivi."""
     newest: dict[str, dict] = {}
+    matcher = _SlugMatcher(products)
     for kind, rows in (("avis", avis), ("alerte", alertes)):
         for row in rows:
             if not isinstance(row, dict):
@@ -640,7 +714,7 @@ def _certfr_latest_rows(avis: list, alertes: list, products: list[Product]) -> d
             revised = _certfr_date(row.get("last_revision_date"))
             if revised is None:
                 continue
-            slugs = _slugs_in(str(row.get("title") or ""), products)
+            slugs = matcher.slugs(str(row.get("title") or ""))
             if not slugs:
                 continue
             stamped = {**row, "kind": kind, "revised": revised}
@@ -708,6 +782,40 @@ def _certfr_slugs(parsed: dict, products: list[Product]) -> list[str]:
     if "java8" not in found:
         found |= _family_slugs(blob, products, "java")
     return sorted(found)
+
+
+class _SlugMatcher:
+    """Expressions compilées une fois pour les 18 000 titres de l'index CERT-FR."""
+
+    def __init__(self, products: list[Product]) -> None:
+        self._compiled: list[tuple[str, list[re.Pattern[str]]]] = []
+        for product in products:
+            patterns = [re.compile(rf"(?<![\w+]){re.escape(alias)}(?![\w+])") for alias in product.aliases]
+            self._compiled.append((product.slug, patterns))
+        self._windows = re.compile(r"(?<![\w+])windows(?![\w+])")
+        self._office = re.compile(r"(?<![\w+])(?:office|microsoft 365)(?![\w+])")
+        self._java = re.compile(r"(?<![\w+])java(?![\w+])")
+        self._windows_slugs = {product.slug for product in products if product.slug.startswith("windows")}
+        self._office_slugs = {product.slug for product in products if product.slug.startswith("office") or product.slug == "m365"}
+        self._java_slugs = {product.slug for product in products if product.slug == "java8"}
+
+    def slugs(self, text: str) -> set[str]:
+        key = match_key(text)
+        if not key:
+            return set()
+        found: set[str] = set()
+        for slug, patterns in self._compiled:
+            for pattern in patterns:
+                if pattern.search(key):
+                    found.add(slug)
+                    break
+        if not any(slug.startswith("windows") for slug in found) and self._windows.search(key):
+            found |= self._windows_slugs
+        if not any(slug.startswith("office") or slug == "m365" for slug in found) and self._office.search(key):
+            found |= self._office_slugs
+        if "java8" not in found and self._java.search(key):
+            found |= self._java_slugs
+        return found
 
 
 def _slugs_in(text: str, products: list[Product], *, families: bool = True) -> set[str]:
@@ -820,5 +928,12 @@ def _mark_source_error(db, key: str, products: list[Product], message: str) -> N
 def _subprocess_runner(command: list[str]) -> int:
     import subprocess
 
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
-    return completed.returncode
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("git a dépassé 5 minutes : " + " ".join(command)) from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        tail = detail[-1][:240] if detail else f"code {completed.returncode}"
+        raise RuntimeError(f"git a échoué ({tail})")
+    return 0

@@ -144,7 +144,17 @@ def logiciels(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
 def securite(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     require_user(request, db)
     linked_only = request.query_params.get("lien") == "parc"
-    return render(request, "securite.html", vue=security_bulletins(db, linked_only=linked_only))
+    vue = security_bulletins(db, linked_only=linked_only)
+    if request.query_params.get("live") == "1":
+        etat = "cours" if vue["en_cours"] else "pret"
+        identique = (
+            request.query_params.get("n") == str(len(vue["alertes"]) + len(vue["avis"]))
+            and request.query_params.get("etat") == etat
+            and request.query_params.get("err") == ("1" if vue["erreur"] else "0")
+        )
+        if identique:
+            return Response(status_code=204)
+    return render(request, "securite.html", vue=vue)
 
 
 @router.get("/logiciels/a-associer", response_class=HTMLResponse)
@@ -155,7 +165,9 @@ def a_associer(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     run = visible_run(db)
     names = []
     if run is not None:
-        names = [item.name for computer in run.computers for item in computer.software]
+        from app.web.queries import _computers
+
+        names = [item.name for computer in _computers(db, run) for item in computer.software]
     return render(
         request,
         "associer.html",

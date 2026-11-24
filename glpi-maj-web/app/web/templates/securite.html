@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Sécurité{% endblock %}
 {% block content %}
-<div id="securite-live"{% if vue.en_cours %} hx-get="/securite?lien={% if vue.lies_seulement %}parc{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
+<div id="securite-live"{% if vue.en_cours %} hx-get="/securite?live=1&amp;lien={% if vue.lies_seulement %}parc{% endif %}&amp;n={{ vue.alertes|length + vue.avis|length }}&amp;etat=cours&amp;err={% if vue.erreur %}1{% else %}0{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
 <section class="card">
   <h1>Avis et alertes de sécurité</h1>
   <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, qu'ils concernent le parc ou non. Un bulletin « Parc » cite un logiciel installé.</p>
