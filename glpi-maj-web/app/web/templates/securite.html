@@ -4,7 +4,11 @@
 <div id="securite-live"{% if vue.en_cours %} hx-get="/securite?live=1&amp;lien={% if vue.lies_seulement %}parc{% endif %}&amp;n={{ vue.alertes|length + vue.avis|length }}&amp;etat=cours&amp;err={% if vue.erreur %}1{% else %}0{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
 <section class="card">
   <h1>Avis et alertes de sécurité</h1>
-  <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, qu'ils concernent le parc ou non. Un bulletin « Parc » cite un logiciel installé.</p>
+  {% if vue.lies_seulement %}
+  <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours qui citent nommément un système ou un logiciel installé sur le parc.</p>
+  {% else %}
+  <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, qu'ils concernent le parc ou non. Un bulletin « Parc » cite nommément un système ou un logiciel installé.</p>
+  {% endif %}
   {% if vue.en_cours %}
   <p>Mise à jour des sources en cours. Cette page se remplit dès que le CERT-FR est lu.</p>
   {% endif %}
@@ -34,7 +38,7 @@
         <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">{% if vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucune alerte récente. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
+      <tr><td colspan="4">{% if vue.lies_seulement and vue.lus %}Aucune alerte ne cite le parc.{% elif vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucune alerte récente. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -53,7 +57,7 @@
         <td>{% if row.lie %}<span class="badge important">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">{% if vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucun avis récent. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
+      <tr><td colspan="4">{% if vue.lies_seulement and vue.lus %}Aucun avis ne cite le parc.{% elif vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucun avis récent. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -432,6 +432,24 @@ def test_page_securite_liste_avis_et_alertes_hors_parc(client, app, admin):
                         "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0099/",
                         "products": [],
                     },
+                    {
+                        "reference": "CERTFR-2026-AVI-0100",
+                        "title": "Vulnérabilité dans Windows",
+                        "kind": "avis",
+                        "alert": False,
+                        "revised": "2026-11-13",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0100/",
+                        "products": ["windows-10", "windows-11"],
+                    },
+                    {
+                        "reference": "CERTFR-2026-AVI-0101",
+                        "title": "Vulnérabilité dans Windows 11",
+                        "kind": "avis",
+                        "alert": False,
+                        "revised": "2026-11-14",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2026-AVI-0101/",
+                        "products": [],
+                    },
                 ],
             },
             origin="live",
@@ -444,7 +462,11 @@ def test_page_securite_liste_avis_et_alertes_hors_parc(client, app, admin):
     assert "Avis" in page.text
     assert "CERTFR-2026-ALE-001" in page.text
     assert "CERTFR-2026-AVI-0099" in page.text
+    assert "CERTFR-2026-AVI-0100" in page.text
     assert "Google Chrome" in page.text
     lies = client.get("/securite", params={"lien": "parc"})
     assert "CERTFR-2026-ALE-001" in lies.text
+    assert "CERTFR-2026-AVI-0101" in lies.text
     assert "CERTFR-2026-AVI-0099" not in lies.text
+    assert "CERTFR-2026-AVI-0100" not in lies.text
+    assert "Liés au parc" in lies.text

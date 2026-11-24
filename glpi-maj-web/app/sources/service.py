@@ -659,7 +659,7 @@ def _recent_bulletins(avis: list, alertes: list, products: list[Product], now: d
                     "alert": kind == "alerte",
                     "revised": revised.date().isoformat(),
                     "url": f"{CERTFR_SITE}/{kind}/{reference}/",
-                    "products": sorted(matcher.slugs(title)),
+                    "products": sorted(matcher.slugs(title, families=False)),
                 }
             )
     rows.sort(key=lambda item: (item["revised"], item["alert"]), reverse=True)
@@ -799,7 +799,7 @@ class _SlugMatcher:
         self._office_slugs = {product.slug for product in products if product.slug.startswith("office") or product.slug == "m365"}
         self._java_slugs = {product.slug for product in products if product.slug == "java8"}
 
-    def slugs(self, text: str) -> set[str]:
+    def slugs(self, text: str, *, families: bool = True) -> set[str]:
         key = match_key(text)
         if not key:
             return set()
@@ -809,6 +809,8 @@ class _SlugMatcher:
                 if pattern.search(key):
                     found.add(slug)
                     break
+        if not families:
+            return found
         if not any(slug.startswith("windows") for slug in found) and self._windows.search(key):
             found |= self._windows_slugs
         if not any(slug.startswith("office") or slug == "m365" for slug in found) and self._office.search(key):

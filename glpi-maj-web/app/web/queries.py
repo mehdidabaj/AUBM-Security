@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 
 from sqlalchemy import func, select
@@ -15,7 +16,7 @@ from app.models.actions import ComputedAction
 from app.models.inventory import CheckRun, ComputerRecord
 from app.models.sources import SourceRun
 from app.sources.cache import get_cache, payload_of, source_overview, version_target
-from app.sources.catalog import PRODUCTS
+from app.sources.catalog import PRODUCTS, match_key
 from app.sources.service import VULN_RECENT_DAYS
 from app.config import Settings
 
@@ -300,14 +301,16 @@ def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
     installed = _installed_slugs(db)
     alertes: list[dict] = []
     avis: list[dict] = []
+    lus = 0
     for row in raw:
         if not isinstance(row, dict):
             continue
-        slugs = [slug for slug in row.get("products") or [] if slug in PRODUCTS]
-        logiciels = [PRODUCTS[slug].label for slug in slugs if slug in installed]
+        lus += 1
+        title = str(row.get("title") or "")
+        logiciels = [PRODUCTS[slug].label for slug in _cited_on_park(title, installed)]
         item = {
             "reference": str(row.get("reference") or ""),
-            "title": str(row.get("title") or ""),
+            "title": title,
             "url": str(row.get("url") or ""),
             "revised": str(row.get("revised") or ""),
             "lie": bool(logiciels),
@@ -334,17 +337,39 @@ def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
         "lies_seulement": linked_only,
         "en_cours": en_cours,
         "erreur": erreur,
+        "lus": lus,
     }
 
 
 def _installed_slugs(db: Session) -> set[str]:
+    """Systèmes et logiciels réellement présents sur le parc visible."""
     run = visible_run(db)
     if run is None:
         return set()
     found: set[str] = set()
     for computer in _computers(db, run):
+        for label in (computer.os_name, f"{computer.os_name} {computer.os_version}".strip()):
+            slug = resolve_slug(db, label)
+            if slug:
+                found.add(slug)
         for software in computer.software:
             slug = resolve_slug(db, software.name)
             if slug:
                 found.add(slug)
+    return found
+
+
+def _cited_on_park(title: str, installed: set[str]) -> list[str]:
+    """Produits du parc cités nommément. « Windows » seul ne retient pas Windows 10 ni Windows 11."""
+    key = match_key(title)
+    if not key or not installed:
+        return []
+    found: list[str] = []
+    for slug in installed:
+        product = PRODUCTS.get(slug)
+        if product is None:
+            continue
+        if any(re.search(rf"(?<![\w+]){re.escape(alias)}(?![\w+])", key) for alias in product.aliases):
+            found.append(slug)
+    found.sort(key=lambda slug: PRODUCTS[slug].label.lower())
     return found
