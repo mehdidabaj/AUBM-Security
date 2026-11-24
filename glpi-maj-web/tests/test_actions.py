@@ -7,12 +7,10 @@ from sqlalchemy import select
 
 from app.actions.engine import compute_check, follow_up_for, is_up_to_date, priority_of, set_follow_up
 from app.actions.mapping import set_mapping, suggest_slug, unmatched_names
-from app.actions.rules import DEFAULT_FIXED_RULES
 from app.actions.versions import compare_versions, is_outdated, parse_version
 from app.glpi.service import latest_successful, save_check
 from app.glpi.types import AgentItem, ComputerItem, SoftwareItem
 from app.models.actions import ComputedAction
-from app.settings_store import get_setting, set_setting
 from app.sources.cache import put_cache
 from app.sources.service import load_fallback_if_needed
 from app.timeutils import utcnow
@@ -193,62 +191,6 @@ def test_regles_fixes_seuils_et_suivi(app):
         assert follow_up_for(db, key).status == "fait"
         assert follow_up_for(db, key).technician == "Nina"
         assert any(row.action_key == key for row in db.scalars(select(ComputedAction).where(ComputedAction.check_run_id == again.id)))
-
-        custom = dict(DEFAULT_FIXED_RULES)
-        custom["windows_10_title"] = "Remplacer Windows 10"
-        set_setting(db, "fixed_rules", custom)
-        set_setting(db, "severity_important", 8)
-        load_fallback_if_needed(db)
-        assert get_setting(db, "fixed_rules")["windows_10_title"] == "Remplacer Windows 10"
-        save_check(db, [_machine(glpi_id=3, name="PC-W10", os_name="Windows 10", os_version="22H2", os_build="19045.1", software=[SoftwareItem("VLC media player", "VideoLAN", "3.0.20")])], "demo")
-        assert _kinds(db, 3)["windows_migration:windows-10"].title == "Remplacer Windows 10"
-        assert _kinds(db, 3)["version:vlc"].severity == "faible"
-    finally:
-        db.close()
-
-
-def test_notification_kev_et_patch_tuesday(app):
-    from app.notify import notify_changes
-
-    db = app.state.SessionLocal()
-    sent = {}
-
-    def fake(message, host, port, username, password, use_tls):
-        sent["body"] = message.get_content()
-        sent["host"] = host
-
-    try:
-        load_fallback_if_needed(db)
-        save_check(db, [_machine(os_build="26300.9818", software=[SoftwareItem("Google Chrome", "Google", "120.0")])], "demo")
-        put_cache(db, "certfr", "catalog", {"cves": {}}, origin="live")
-        put_cache(db, "msrc", "catalog", {"release_id": "2026-Oct", "windows": {}}, origin="live")
-        assert notify_changes(db, app.state.settings, send=fake) is False
-        put_cache(
-            db,
-            "certfr",
-            "catalog",
-            {
-                "cves": {
-                    "CVE-2026-1000": {
-                        "id": "CVE-2026-1000",
-                        "url": "https://www.cert.cyber.gouv.fr/alerte/CERTFR-2026-ALE-001/",
-                        "alert": True,
-                        "products": ["chrome"],
-                    }
-                }
-            },
-            origin="live",
-        )
-        save_check(db, [_machine(os_build="26300.9818", software=[SoftwareItem("Google Chrome", "Google", "120.0")])], "demo")
-        put_cache(db, "msrc", "catalog", {"release_id": "2026-Nov"}, origin="live")
-        set_setting(db, "smtp_enabled", True)
-        set_setting(db, "smtp_host", "smtp.exemple")
-        set_setting(db, "smtp_from", "maj@exemple")
-        set_setting(db, "smtp_to", "equipe@exemple")
-        assert notify_changes(db, app.state.settings, send=fake) is True
-        assert "CVE-2026-1000" in sent["body"]
-        assert "PC-TEST" in sent["body"]
-        assert "Patch Tuesday" in sent["body"]
     finally:
         db.close()
 

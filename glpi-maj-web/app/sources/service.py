@@ -220,11 +220,9 @@ def launch_source_update(app) -> None:
                 logger.exception("La mise à jour des sources a échoué")
                 return
             from app.glpi.service import run_verification
-            from app.notify import notify_changes
 
             try:
                 run_verification(db, app.state.settings)
-                notify_changes(db, app.state.settings)
             except Exception:
                 logger.exception("La vérification après les sources a échoué")
         finally:

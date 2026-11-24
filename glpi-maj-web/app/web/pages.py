@@ -7,7 +7,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.actions.rules import DEFAULT_FIXED_RULES, fixed_rules, include_low, stale_days, threshold
 from app.settings_store import get_setting, set_setting
 from app.sources.catalog import SOURCE_LABELS
 from app.web.deps import enforce_csrf, get_db, require_user
@@ -209,24 +208,8 @@ def parametres(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     return render(
         request,
         "parametres.html",
-        regles=fixed_rules(db),
-        critique=threshold(db, "severity_critical", 9),
-        important=threshold(db, "severity_important", 7),
-        inclure_faible=include_low(db),
-        jours=stale_days(db),
-        heure=int(get_setting(db, "schedule_hour", 2) or 2),
-        minute=int(get_setting(db, "schedule_minute", 0) or 0),
         historique=int(get_setting(db, "history_limit", 10) or 10),
         sources=[{"cle": key, "libelle": label, "actif": key in enabled} for key, label in SOURCE_LABELS],
-        smtp={
-            "enabled": bool(get_setting(db, "smtp_enabled", False)),
-            "host": get_setting(db, "smtp_host", "") or "",
-            "port": get_setting(db, "smtp_port", 587) or 587,
-            "user": get_setting(db, "smtp_user", "") or "",
-            "sender": get_setting(db, "smtp_from", "") or "",
-            "recipient": get_setting(db, "smtp_to", "") or "",
-            "tls": bool(get_setting(db, "smtp_tls", True)),
-        },
         message=request.query_params.get("message", ""),
     )
 
@@ -240,61 +223,14 @@ async def sauver_sources(request: Request, db: Session = Depends(get_db)) -> Red
     return _retour("Sources enregistrées.")
 
 
-@router.post("/parametres/regles")
-async def sauver_regles(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+@router.post("/parametres/historique")
+async def sauver_historique(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
     await enforce_csrf(request, db)
     require_user(request, db, "admin")
     form = await request.form()
-    rules = {key: str(form.get(key) or DEFAULT_FIXED_RULES[key]) for key in DEFAULT_FIXED_RULES}
-    set_setting(db, "fixed_rules", rules)
-    return _retour("Règles enregistrées.")
-
-
-@router.post("/parametres/seuils")
-async def sauver_seuils(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
-    await enforce_csrf(request, db)
-    require_user(request, db, "admin")
-    form = await request.form()
-    set_setting(db, "severity_critical", float(form.get("severity_critical") or 9))
-    set_setting(db, "severity_important", float(form.get("severity_important") or 7))
-    set_setting(db, "include_low_in_uptodate", "include_low" in form)
-    set_setting(db, "stale_days", int(form.get("stale_days") or 7))
-    return _retour("Seuils enregistrés.")
-
-
-@router.post("/parametres/planification")
-async def sauver_plan(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
-    await enforce_csrf(request, db)
-    require_user(request, db, "admin")
-    form = await request.form()
-    hour = min(23, max(0, int(form.get("hour") or 2)))
-    minute = min(59, max(0, int(form.get("minute") or 0)))
     history = min(100, max(1, int(form.get("history_limit") or 10)))
-    set_setting(db, "schedule_hour", hour)
-    set_setting(db, "schedule_minute", minute)
     set_setting(db, "history_limit", history)
-    from app.scheduler import apply_schedule
-
-    apply_schedule(request.app)
-    return _retour("Planification enregistrée.")
-
-
-@router.post("/parametres/smtp")
-async def sauver_smtp(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
-    await enforce_csrf(request, db)
-    require_user(request, db, "admin")
-    form = await request.form()
-    set_setting(db, "smtp_enabled", "smtp_enabled" in form)
-    set_setting(db, "smtp_host", str(form.get("smtp_host") or ""))
-    set_setting(db, "smtp_port", int(form.get("smtp_port") or 587))
-    set_setting(db, "smtp_user", str(form.get("smtp_user") or ""))
-    set_setting(db, "smtp_from", str(form.get("smtp_from") or ""))
-    set_setting(db, "smtp_to", str(form.get("smtp_to") or ""))
-    set_setting(db, "smtp_tls", "smtp_tls" in form)
-    password = str(form.get("smtp_password") or "")
-    if password:
-        set_setting(db, "smtp_password", password)
-    return _retour("Courriel enregistré.")
+    return _retour("Nombre de vérifications enregistré.")
 
 
 @router.post("/parametres/glpi-test", response_class=HTMLResponse)

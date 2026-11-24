@@ -23,7 +23,6 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("SECRET_KEY", "secret-de-test")
     monkeypatch.setenv("DEMO_MODE", "on")
-    monkeypatch.setenv("SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("GLPI_APP_TOKEN", "")
     monkeypatch.setenv("GLPI_USER_TOKEN", "")
     monkeypatch.setenv("GLPI_MAJ_CONFIG", str(tmp_path / "absent.env"))

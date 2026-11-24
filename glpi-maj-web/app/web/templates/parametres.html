@@ -24,62 +24,11 @@
 </section>
 
 <section class="card">
-  <h2>Règles fixes</h2>
-  <form method="post" action="/parametres/regles" class="stack">
+  <h2>Vérifications conservées</h2>
+  <form method="post" action="/parametres/historique" class="filters">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% for cle, valeur in regles.items() %}
-    <label>{{ cle }}
-      <input name="{{ cle }}" value="{{ valeur }}">
-    </label>
-    {% endfor %}
-    <button type="submit">Enregistrer les règles</button>
-  </form>
-</section>
-
-<section class="card">
-  <h2>Seuils de sévérité</h2>
-  <form method="post" action="/parametres/seuils">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Critique à partir du CVSS
-      <input type="number" step="0.1" name="severity_critical" value="{{ critique }}">
-    </label>
-    <label>Important à partir du CVSS
-      <input type="number" step="0.1" name="severity_important" value="{{ important }}">
-    </label>
-    <label>Inventaire trop ancien (jours)
-      <input type="number" name="stale_days" value="{{ jours }}">
-    </label>
-    <label class="check"><input type="checkbox" name="include_low" {% if inclure_faible %}checked{% endif %}> Compter les actions faibles dans « à jour »</label>
-    <button type="submit">Enregistrer les seuils</button>
-  </form>
-</section>
-
-<section class="card">
-  <h2>Planification</h2>
-  <p class="muted">Heure de Paris. La collecte des sources précède la vérification du parc.</p>
-  <form method="post" action="/parametres/planification" class="filters">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Heure <input type="number" min="0" max="23" name="hour" value="{{ heure }}"></label>
-    <label>Minute <input type="number" min="0" max="59" name="minute" value="{{ minute }}"></label>
-    <label>Vérifications conservées <input type="number" min="1" max="100" name="history_limit" value="{{ historique }}"></label>
-    <button type="submit">Enregistrer l'heure</button>
-  </form>
-</section>
-
-<section class="card">
-  <h2>Courriel</h2>
-  <p class="muted">Désactivé par défaut. Le premier passage mémorise les CVE déjà connues sans envoyer de message.</p>
-  <form method="post" action="/parametres/smtp">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label class="check"><input type="checkbox" name="smtp_enabled" {% if smtp.enabled %}checked{% endif %}> Activer l'envoi</label>
-    <label>Serveur <input name="smtp_host" value="{{ smtp.host }}"></label>
-    <label>Port <input type="number" name="smtp_port" value="{{ smtp.port }}"></label>
-    <label>Utilisateur <input name="smtp_user" value="{{ smtp.user }}"></label>
-    <label>Mot de passe <input type="password" name="smtp_password" placeholder="Laisser vide pour conserver"></label>
-    <label>Expéditeur <input name="smtp_from" value="{{ smtp.sender }}"></label>
-    <label>Destinataire <input name="smtp_to" value="{{ smtp.recipient }}"></label>
-    <label class="check"><input type="checkbox" name="smtp_tls" {% if smtp.tls %}checked{% endif %}> TLS</label>
-    <button type="submit">Enregistrer le courriel</button>
+    <label>Nombre <input type="number" min="1" max="100" name="history_limit" value="{{ historique }}"></label>
+    <button type="submit">Enregistrer</button>
   </form>
 </section>
 

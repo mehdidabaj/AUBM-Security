@@ -51,7 +51,6 @@ class Settings:
     github_token: str
     session_cookie_secure: bool
     session_hours: int
-    scheduler_enabled: bool
     admin_user: str
     admin_password: str
 
@@ -92,7 +91,6 @@ def load_settings(env_file: str | None = None) -> Settings:
         github_token=get("GITHUB_TOKEN", ""),
         session_cookie_secure=_bool(get("SESSION_COOKIE_SECURE", "0")),
         session_hours=int(get("SESSION_HOURS", "8") or "8"),
-        scheduler_enabled=_bool(get("SCHEDULER_ENABLED", "1"), default=True),
         admin_user=get("ADMIN_USER", "admin"),
         admin_password=get("ADMIN_PASSWORD", ""),
     )

@@ -83,29 +83,32 @@ def test_fiche_suivi_et_lien_glpi(client, app):
     assert client.get("/parametres").status_code == 403
 
 
-def test_parametres_glpi_seuils_et_sources(client, admin, monkeypatch):
+def test_parametres_glpi_et_sources(client, admin, monkeypatch):
     login(client, "admin", "motdepasse-admin")
     page = client.get("/parametres")
     assert "Tester la connexion GLPI" in page.text
+    assert "Règles fixes" not in page.text
+    assert "Seuils de sévérité" not in page.text
+    assert "Planification" not in page.text
+    assert "Courriel" not in page.text
+    assert "Vérifications conservées" in page.text
     token = csrf_from(page.text)
     report = client.post("/parametres/glpi-test", data={"csrf_token": token})
     assert "démo" in report.text
     assert "20 ordinateurs" in report.text
 
     saved = client.post(
-        "/parametres/seuils",
-        data={
-            "csrf_token": token,
-            "severity_critical": "8.5",
-            "severity_important": "6",
-            "stale_days": "9",
-        },
+        "/parametres/historique",
+        data={"csrf_token": token, "history_limit": "12"},
         follow_redirects=False,
     )
     assert saved.status_code == 303
     refreshed = client.get("/parametres")
-    assert 'name="severity_critical" value="8.5"' in refreshed.text
-    assert 'name="stale_days" value="9"' in refreshed.text
+    assert 'name="history_limit" value="12"' in refreshed.text
+    assert client.post("/parametres/seuils", data={"csrf_token": token}, follow_redirects=False).status_code == 404
+    assert client.post("/parametres/regles", data={"csrf_token": token}, follow_redirects=False).status_code == 404
+    assert client.post("/parametres/planification", data={"csrf_token": token}, follow_redirects=False).status_code == 404
+    assert client.post("/parametres/smtp", data={"csrf_token": token}, follow_redirects=False).status_code == 404
 
     called = {}
 

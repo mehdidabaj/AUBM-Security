@@ -34,13 +34,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db = app.state.SessionLocal()
         try:
             from app.actions.mapping import seed_mappings
-            from app.actions.rules import ensure_rules
             from app.sources.service import enable_new_sources, load_fallback_if_needed
 
             load_fallback_if_needed(db)
             enable_new_sources(db)
             seed_mappings(db)
-            ensure_rules(db)
             from app.glpi.service import abandon_running
 
             abandon_running(db)
@@ -52,17 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.warning("Base non initialisée : démarrage sans données de référence.")
         finally:
             db.close()
-        scheduler = None
-        if settings.scheduler_enabled:
-            try:
-                from app.scheduler import start_scheduler
-
-                scheduler = start_scheduler(app)
-            except Exception:
-                logger.exception("Le planificateur n'a pas démarré. L'interface reste disponible.")
         yield
-        if scheduler is not None:
-            scheduler.shutdown(wait=False)
 
     app = FastAPI(title="Suivi des mises à jour GLPI", lifespan=lifespan)
     app.state.settings = settings
