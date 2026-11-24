@@ -13,7 +13,7 @@ from app.actions.rules import include_low
 from app.actions.versions import is_outdated, parse_version
 from app.glpi.service import glpi_computer_url, latest_successful, visible_run
 from app.models.actions import ComputedAction
-from app.models.history import SoftwareChange
+from app.models.history import SecurityWatch, SoftwareChange
 from app.models.inventory import CheckRun, ComputerRecord
 from app.models.sources import SourceRun
 from app.security_topics import KIND_LABELS, bulletin_kind
@@ -290,6 +290,8 @@ def security_bulletins(db: Session, *, mode: str = "") -> dict:
     """Avis et alertes CERT-FR récents, filtrés par parc, type ou suivi."""
     if mode not in _SECURITY_MODES:
         mode = ""
+    if mode == "suivis":
+        return _followed_bulletins(db)
     payload = payload_of(get_cache(db, "certfr", "bulletins"))
     raw = payload.get("items")
     if not raw:
@@ -316,12 +318,13 @@ def security_bulletins(db: Session, *, mode: str = "") -> dict:
             "type": kind,
             "type_label": KIND_LABELS.get(kind, "Logiciel"),
             "suivi": follows(title, followed),
+            "closed": False,
+            "alert": bool(row.get("alert")),
+            "sujet": "",
         }
         if mode == "parc" and not item["lie"]:
             continue
         if mode in {"logiciel", "materiel", "ransomware"} and item["type"] != mode:
-            continue
-        if mode == "suivis" and not item["suivi"]:
             continue
         if row.get("alert"):
             alertes.append(item)
@@ -346,6 +349,57 @@ def security_bulletins(db: Session, *, mode: str = "") -> dict:
         "en_cours": en_cours,
         "erreur": erreur,
         "lus": lus,
+    }
+
+
+def concerned_alerts(db: Session) -> dict:
+    """Dernier bulletin de chaque sujet suivi, installé ou non."""
+    from app.watches import sync_from_cache
+
+    watches = list(db.scalars(select(SecurityWatch).order_by(SecurityWatch.label)))
+    if any(not watch.current_reference for watch in watches):
+        sync_from_cache(db)
+        watches = list(db.scalars(select(SecurityWatch).order_by(SecurityWatch.label)))
+    installed = _installed_slugs(db)
+    lignes = [_watch_row(watch, installed) for watch in watches]
+    lignes.sort(key=lambda item: item["revised"], reverse=True)
+    lignes.sort(key=lambda item: not item["alert"])
+    run = db.scalar(select(SourceRun).where(SourceRun.source == "toutes").order_by(SourceRun.id.desc()))
+    en_cours = run is not None and run.status == "running" and run.finished_at is None
+    return {"lignes": lignes, "en_cours": en_cours, "lien": "suivis"}
+
+
+def _followed_bulletins(db: Session) -> dict:
+    vue = concerned_alerts(db)
+    return {
+        "alertes": [row for row in vue["lignes"] if row["alert"] and row["reference"]],
+        "avis": [row for row in vue["lignes"] if not row["alert"] and row["reference"]],
+        "jours": VULN_RECENT_DAYS,
+        "lien": "suivis",
+        "lies_seulement": False,
+        "en_cours": vue["en_cours"],
+        "erreur": "",
+        "lus": len(vue["lignes"]),
+    }
+
+
+def _watch_row(watch: SecurityWatch, installed: set[str]) -> dict:
+    title = watch.current_title or watch.label
+    logiciels = [PRODUCTS[slug].label for slug in _cited_on_park(title, installed)]
+    return {
+        "reference": watch.current_reference,
+        "title": title,
+        "url": watch.current_url,
+        "revised": watch.current_revised,
+        "alert": watch.current_alert,
+        "closed": watch.current_closed,
+        "type": watch.kind,
+        "type_label": KIND_LABELS.get(watch.kind, "Logiciel"),
+        "sujet": watch.label,
+        "subject": watch.subject_key,
+        "lie": bool(logiciels),
+        "logiciels": logiciels,
+        "suivi": True,
     }
 
 

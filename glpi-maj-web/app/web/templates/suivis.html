@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Me concerne{% endblock %}
+{% block content %}
+<div id="suivis-live"{% if vue.en_cours %} hx-get="/suivis?live=1&amp;n={{ vue.lignes|length }}&amp;etat=cours" hx-trigger="every 2s" hx-select="#suivis-live" hx-swap="outerHTML"{% endif %}>
+<section class="card">
+  <h1>Alertes qui me concernent</h1>
+  <p class="muted">Dernier bulletin de chaque sujet marqué « Me concerne », qu'il soit installé sur le parc ou non. À chaque mise à jour des sources, un bulletin plus récent remplace l'ancien. Un bulletin clôturé par le CERT-FR est signalé.</p>
+  {% if vue.en_cours %}
+  <p>Mise à jour des sources en cours.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Sujet</th><th>Type</th><th>Référence</th><th>Titre</th><th>État</th><th>Parc</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for row in vue.lignes %}
+      <tr>
+        <td>{{ row.revised or "—" }}</td>
+        <td>{{ row.sujet }}</td>
+        <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
+        <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% elif row.reference %}{{ row.reference }}{% else %}—{% endif %}</td>
+        <td>{{ row.title or "—" }}</td>
+        <td>{% if row.closed %}<span class="badge cloture">Clôturée</span>{% elif row.reference %}<span class="badge ok">En cours</span>{% else %}—{% endif %}</td>
+        <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% elif row.reference %}Hors parc{% else %}—{% endif %}</td>
+        <td>
+          {% if role_rank[user.role] >= role_rank["technicien"] %}
+          <form method="post" action="/securite/suivi">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="subject" value="{{ row.subject }}">
+            <input type="hidden" name="retour" value="suivis">
+            <button type="submit" class="linkish">Retirer</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">Aucun suivi. Sur la page Sécurité, utilisez « Me concerne ».</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+</div>
+{% endblock %}

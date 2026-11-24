@@ -503,22 +503,26 @@ def test_types_et_suivi_hors_parc(client, app, admin):
         follow_redirects=False,
     )
     assert suivi.status_code == 303
-    suivis = client.get("/securite", params={"lien": "suivis"})
-    assert "CERTFR-2026-AVI-0200" in suivis.text
+    suivis = client.get("/suivis")
+    assert "Alertes qui me concernent" in suivis.text
     assert "CERTFR-2026-AVI-0201" in suivis.text
+    assert "CERTFR-2026-AVI-0200" not in suivis.text
     assert "FortiGate" not in suivis.text
     assert "LockBit" not in suivis.text
-    assert 'value="suivis" selected' in suivis.text
-    assert "sujets que vous avez marqués" in suivis.text
+    assert "Hors parc" in suivis.text
+    filtre = client.get("/securite", params={"lien": "suivis"})
+    assert "CERTFR-2026-AVI-0201" in filtre.text
+    assert "CERTFR-2026-AVI-0200" not in filtre.text
+    assert 'value="suivis" selected' in filtre.text
 
     retire = client.post(
         "/securite/suivi",
         data={
             "csrf_token": csrf_from(suivis.text),
-            "reference": "CERTFR-2026-AVI-0201",
+            "subject": "sujet:zoom",
             "retour": "suivis",
         },
         follow_redirects=True,
     )
-    assert "CERTFR-2026-AVI-0200" not in retire.text
-    assert "Aucun avis suivi" in retire.text
+    assert "CERTFR-2026-AVI-0201" not in retire.text
+    assert "Aucun suivi" in retire.text

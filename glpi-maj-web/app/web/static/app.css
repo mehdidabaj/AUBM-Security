@@ -177,6 +177,7 @@ th { font-size: 0.82rem; color: var(--muted); }
 .badge.materiel { background: #0f766e; }
 .badge.ransomware { background: var(--critique); }
 .badge.manuel { background: #6d28d9; }
+.badge.cloture { background: #64748b; }
 .suivi-bulletin { margin: 0; }
 .suivi-bulletin button { margin-top: 0; }
 button:disabled { opacity: 0.55; cursor: default; }

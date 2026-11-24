@@ -13,7 +13,7 @@
   {% elif vue.lien == "ransomware" %}
   <p class="muted">Avis et alertes qui concernent un rançongiciel.</p>
   {% elif vue.lien == "suivis" %}
-  <p class="muted">Bulletins des sujets que vous avez marqués « Me concerne », même s'ils ne sont pas installés sur le parc.</p>
+  <p class="muted">Dernier bulletin de chaque sujet marqué « Me concerne », qu'il soit dans le parc ou non. La page <a href="/suivis">Me concerne</a> le détaille. Une mise à jour des sources remplace un bulletin plus ancien ou le marque clôturé.</p>
   {% else %}
   <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, triés par type : rançongiciel, matériel, puis logiciel. « Me concerne » suit ensuite ce sujet, qu'il soit dans le parc ou non.</p>
   {% endif %}
@@ -47,7 +47,7 @@
         <td>{{ row.revised }}</td>
         <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
         <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
-        <td>{{ row.title or "—" }}</td>
+        <td>{{ row.title or "—" }}{% if row.closed %} <span class="badge cloture">Clôturée</span>{% endif %}</td>
         <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
         <td>{% include "securite_suivi.html" %}</td>
       </tr>
@@ -68,7 +68,7 @@
         <td>{{ row.revised }}</td>
         <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
         <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
-        <td>{{ row.title or "—" }}</td>
+        <td>{{ row.title or "—" }}{% if row.closed %} <span class="badge cloture">Clôturée</span>{% endif %}</td>
         <td>{% if row.lie %}<span class="badge important">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
         <td>{% include "securite_suivi.html" %}</td>
       </tr>

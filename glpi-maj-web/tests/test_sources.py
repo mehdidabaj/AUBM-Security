@@ -97,6 +97,78 @@ def test_les_bulletins_restent_listes_si_une_fiche_echoue(app):
         db.close()
 
 
+def test_collecte_certfr_remplace_le_bulletin_suivi(app):
+    from sqlalchemy import select
+
+    from app.models.history import SecurityWatch
+    from app.sources.catalog import PRODUCTS
+    from app.sources.service import _collect_certfr
+    from app.timeutils import utcnow
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.rstrip("/").endswith("/avis/json"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "reference": "CERTFR-2026-AVI-0009",
+                        "title": "Vulnérabilité dans Google Chrome",
+                        "last_revision_date": "2026-10-01T00:00:00",
+                        "json_url": "/avis/CERTFR-2026-AVI-0009/json/",
+                    }
+                ],
+            )
+        if url.rstrip("/").endswith("/alerte/json"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "reference": "CERTFR-2026-ALE-009",
+                        "title": "Alerte dans Google Chrome",
+                        "last_revision_date": "2026-11-18T00:00:00",
+                        "json_url": "/alerte/CERTFR-2026-ALE-009/json/",
+                    }
+                ],
+            )
+        if url.rstrip("/").endswith("/alerte/CERTFR-2026-ALE-009/json"):
+            return httpx.Response(
+                200,
+                json={
+                    "reference": "CERTFR-2026-ALE-009",
+                    "title": "Alerte dans Google Chrome",
+                    "closed_at": "2026-11-20T00:00:00",
+                    "cves": [],
+                },
+            )
+        return httpx.Response(200, json={"cves": []})
+
+    db = app.state.SessionLocal()
+    try:
+        db.add(
+            SecurityWatch(
+                subject_key="logiciel:chrome",
+                label="Google Chrome",
+                kind="logiciel",
+                created_by="admin",
+                created_at=utcnow(),
+                current_reference="CERTFR-2024-AVI-0001",
+                current_title="Ancienne alerte Chrome",
+                current_revised="2024-01-02",
+            )
+        )
+        db.commit()
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        _collect_certfr(db, http, list(PRODUCTS.values()), lambda _seconds: None, datetime(2026, 11, 18))
+        watch = db.scalar(select(SecurityWatch))
+        assert watch.current_reference == "CERTFR-2026-ALE-009"
+        assert watch.current_closed is True
+        assert watch.current_alert is True
+        assert watch.current_revised == "2026-11-18"
+    finally:
+        db.close()
+
+
 def test_certfr_ne_retient_que_le_dernier_bulletin_de_chaque_logiciel():
     from app.sources.catalog import PRODUCTS
     from app.sources.service import _certfr_latest_rows, _newest_cve

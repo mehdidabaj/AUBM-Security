@@ -21,6 +21,7 @@
         <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Tableau de bord</a>
         <a href="/postes" {% if request.url.path.startswith("/postes") %}class="active"{% endif %}>Postes</a>
         <a href="/securite" {% if request.url.path.startswith("/securite") %}class="active"{% endif %}>Sécurité</a>
+        <a href="/suivis" {% if request.url.path.startswith("/suivis") %}class="active"{% endif %}>Me concerne</a>
         <a href="/sources" {% if request.url.path.startswith("/sources") %}class="active"{% endif %}>Sources</a>
         {% if role_rank[user.role] >= role_rank["admin"] %}
         <a href="/parametres" {% if request.url.path.startswith("/parametres") %}class="active"{% endif %}>Paramètres</a>

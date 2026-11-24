@@ -15,6 +15,7 @@ from app.web.queries import (
     bulletin_title,
     computer_detail,
     computer_views,
+    concerned_alerts,
     dashboard,
     journal,
     security_bulletins,
@@ -139,22 +140,42 @@ def securite(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     return render(request, "securite.html", vue=vue)
 
 
+@router.get("/suivis", response_class=HTMLResponse)
+def suivis(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    require_user(request, db)
+    vue = concerned_alerts(db)
+    if request.query_params.get("live") == "1":
+        etat = "cours" if vue["en_cours"] else "pret"
+        if request.query_params.get("n") == str(len(vue["lignes"])) and request.query_params.get("etat") == etat:
+            return Response(status_code=204)
+    return render(request, "suivis.html", vue=vue)
+
+
 @router.post("/securite/suivi")
 async def suivi_securite(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
     await enforce_csrf(request, db)
     user = require_user(request, db, "technicien")
     form = await request.form()
     reference = str(form.get("reference") or "").strip()
+    subject = str(form.get("subject") or "").strip()
     retour = str(form.get("retour") or "")
     if retour not in _SECURITY_LIENS:
         retour = ""
-    title = bulletin_title(db, reference)
-    if not title:
-        raise HTTPException(status_code=404, detail="Bulletin introuvable.")
-    from app.watches import toggle_watch
+    from app.watches import remove_subject, toggle_watch
 
-    toggle_watch(db, title, user.username)
-    target = "/securite" if not retour else f"/securite?lien={retour}"
+    if subject:
+        remove_subject(db, subject)
+    else:
+        title = bulletin_title(db, reference)
+        if not title:
+            raise HTTPException(status_code=404, detail="Bulletin introuvable.")
+        toggle_watch(db, title, user.username)
+    if retour == "suivis":
+        target = "/suivis"
+    elif retour:
+        target = f"/securite?lien={retour}"
+    else:
+        target = "/securite"
     return RedirectResponse(target, status_code=303)
 
 

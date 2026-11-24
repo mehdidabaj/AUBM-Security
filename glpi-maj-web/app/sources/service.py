@@ -580,12 +580,14 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         and not catalog.last_error
     )
     if lists_ready and catalog_ready:
+        _refresh_security_watches(db, client, sleep)
         return len(listed_items)
     _dire(db, "Téléchargement des avis CERT-FR")
     avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
     alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
     bulletins = _recent_bulletins(avis, alertes, products, now)
     put_cache(db, "certfr", "bulletins", {"items": bulletins}, origin="live", now=now)
+    _refresh_security_watches(db, client, sleep, avis=avis, alertes=alertes)
     _dire(db, f"Avis CERT-FR enregistrés ({len(bulletins)}). Lecture des fiches.")
     latest = _certfr_latest_rows(avis, alertes, products)
     chosen = {slug: str(row.get("reference") or "") for slug, row in latest.items()}
@@ -619,6 +621,78 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         _remember_certfr(cves, parsed, cve["id"], owned)
     put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
     return len(bulletins)
+
+
+def _refresh_security_watches(db, client, sleep, avis: list | None = None, alertes: list | None = None) -> None:
+    """Relit le dernier bulletin de chaque sujet suivi, et le remplace s'il est ancien ou clôturé."""
+    from app.models.history import SecurityWatch
+    from app.watches import apply_latest, choose_latest
+
+    watches = list(db.scalars(select(SecurityWatch)))
+    if not watches:
+        return
+    if avis is None or alertes is None:
+        try:
+            avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
+            alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
+        except Exception:
+            logger.exception("La relecture des suivis CERT-FR a échoué")
+            return
+    rows = _index_bulletins(avis, alertes)
+    chosen = choose_latest(rows, {watch.subject_key for watch in watches})
+    for row in chosen.values():
+        _mark_closed(client, row, sleep)
+    apply_latest(db, rows)
+
+
+def _index_bulletins(avis: list, alertes: list) -> list[dict]:
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for kind, items in (("alerte", alertes), ("avis", avis)):
+        for row in items:
+            if not isinstance(row, dict):
+                continue
+            revised = _certfr_date(row.get("last_revision_date"))
+            reference = str(row.get("reference") or "").strip()
+            if revised is None or not reference or reference in seen or "/" in reference or ".." in reference:
+                continue
+            seen.add(reference)
+            rows.append(
+                {
+                    "reference": reference,
+                    "title": str(row.get("title") or "").strip(),
+                    "url": f"{CERTFR_SITE}/{kind}/{reference}/",
+                    "revised": revised.date().isoformat(),
+                    "alert": kind == "alerte",
+                    "closed": False,
+                    "json_url": str(row.get("json_url") or ""),
+                    "kind": kind,
+                }
+            )
+    return rows
+
+
+def _mark_closed(client, row: dict, sleep) -> None:
+    try:
+        response = get_with_retries(
+            client,
+            _certfr_detail_url(row),
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            sleep=sleep,
+        )
+    except Exception:
+        logger.warning("La fiche %s n'a pas pu être lue pour savoir si elle est clôturée.", row.get("reference"))
+        return
+    if response.status_code >= 400:
+        return
+    try:
+        payload = response.json()
+    except Exception:
+        return
+    if isinstance(payload, dict):
+        row["closed"] = bool(payload.get("closed_at"))
+        if payload.get("title"):
+            row["title"] = str(payload["title"]).strip()
 
 
 def _dire(db, texte: str) -> None:

@@ -94,6 +94,74 @@ def test_historique_automatique_manuel_et_conservation(app):
         db.close()
 
 
+def test_le_suivi_ne_garde_que_le_dernier_bulletin(app):
+    from app.models.history import SecurityWatch
+    from app.watches import apply_latest
+
+    db = app.state.SessionLocal()
+    try:
+        db.add(
+            SecurityWatch(
+                subject_key="sujet:zoom",
+                label="Zoom",
+                kind="logiciel",
+                created_by="admin",
+                created_at=utcnow(),
+                current_reference="OLD",
+                current_title="Vulnérabilité dans Zoom",
+                current_revised="2026-11-01",
+                current_closed=False,
+            )
+        )
+        db.commit()
+        changed = apply_latest(
+            db,
+            [
+                {
+                    "reference": "OLD",
+                    "title": "Vulnérabilité dans Zoom",
+                    "url": "https://exemple/old",
+                    "revised": "2026-11-01",
+                    "alert": False,
+                    "closed": True,
+                },
+                {
+                    "reference": "NEW",
+                    "title": "Multiples vulnérabilités dans Zoom",
+                    "url": "https://exemple/new",
+                    "revised": "2026-11-21",
+                    "alert": True,
+                    "closed": False,
+                },
+            ],
+        )
+        watch = db.scalar(select(SecurityWatch))
+        assert changed == 1
+        assert watch.current_reference == "NEW"
+        assert watch.current_closed is False
+        assert watch.current_alert is True
+        apply_latest(
+            db,
+            [
+                {
+                    "reference": "NEW",
+                    "title": "Multiples vulnérabilités dans Zoom",
+                    "url": "https://exemple/new",
+                    "revised": "2026-11-21",
+                    "alert": True,
+                    "closed": True,
+                }
+            ],
+        )
+        db.refresh(watch)
+        assert watch.current_reference == "NEW"
+        assert watch.current_closed is True
+        assert apply_latest(db, []) == 0
+        assert watch.current_reference == "NEW"
+    finally:
+        db.close()
+
+
 def test_page_poste_affiche_l_historique(client, app, admin):
     from tests.conftest import login
 

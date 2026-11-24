@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -39,3 +39,9 @@ class SecurityWatch(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="logiciel")
     created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    current_reference: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    current_title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    current_url: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    current_revised: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    current_alert: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    current_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
