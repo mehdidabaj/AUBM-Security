@@ -23,9 +23,9 @@
   {% if vue.erreur %}
   <p class="alert">{{ vue.erreur }}</p>
   {% endif %}
-  <form class="filters" method="get" action="/securite">
+  <form id="filtre-securite" class="filters" method="get" action="/securite" hx-get="/securite" hx-target="#securite-live" hx-select="#securite-live" hx-swap="outerHTML" hx-push-url="true" hx-trigger="change">
     <label>Affichage
-      <select name="lien" onchange="this.form.submit()">
+      <select name="lien">
         <option value="">Tous</option>
         <option value="parc" {% if vue.lien == "parc" %}selected{% endif %}>Liés au parc</option>
         <option value="logiciel" {% if vue.lien == "logiciel" %}selected{% endif %}>Logiciel</option>

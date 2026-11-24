@@ -473,6 +473,9 @@ def test_types_et_suivi_hors_parc(client, app, admin):
         db.close()
 
     page = client.get("/securite")
+    assert 'onchange=' not in page.text
+    assert 'hx-get="/securite"' in page.text
+    assert 'hx-trigger="change"' in page.text
     assert page.text.find("LockBit") < page.text.find("FortiGate")
     assert page.text.find("FortiGate") < page.text.find("Zoom")
     ransom = client.get("/securite", params={"lien": "ransomware"})
@@ -505,6 +508,8 @@ def test_types_et_suivi_hors_parc(client, app, admin):
     assert "CERTFR-2026-AVI-0201" in suivis.text
     assert "FortiGate" not in suivis.text
     assert "LockBit" not in suivis.text
+    assert 'value="suivis" selected' in suivis.text
+    assert "sujets que vous avez marqués" in suivis.text
 
     retire = client.post(
         "/securite/suivi",
