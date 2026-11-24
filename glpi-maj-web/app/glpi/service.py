@@ -6,8 +6,8 @@ import threading
 from datetime import datetime, timedelta
 
 import httpx
-from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import delete, func, insert, literal, select
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from app.actions.engine import priority_of
 from app.actions.rules import SEVERITY_RANK
@@ -442,56 +442,131 @@ def _annulation_demandee(db: Session, run_id: int) -> bool:
     return bool(value)
 
 
-def _reprendre_postes(db: Session, run: CheckRun, sources: dict[int, ComputerRecord], rows: list) -> None:
-    """Recopie le système et les logiciels des postes dont GLPI n'a pas bougé."""
-    ids: set[int] = set()
+def _copier_inchanges(db: Session, run: CheckRun, previous: CheckRun | None, rows: list) -> None:
+    """Reprend en base les postes inchangés, sans relire leurs logiciels."""
+    if previous is None or not rows:
+        return
+    ids: list[int] = []
     for row in rows:
         try:
-            ids.add(int(row["id"]))
+            ids.append(int(row["id"]))
         except (KeyError, TypeError, ValueError):
             continue
-    if not ids or not sources:
+    if not ids:
         return
+    for offset in range(0, len(ids), 400):
+        part = ids[offset : offset + 400]
+        present = set(
+            db.scalars(
+                select(ComputerRecord.glpi_id).where(
+                    ComputerRecord.check_run_id == run.id,
+                    ComputerRecord.glpi_id.in_(part),
+                )
+            )
+        )
+        _copier_lot(db, run, previous.id, [glpi_id for glpi_id in part if glpi_id not in present])
+        _completer_existants(db, run, previous.id, [glpi_id for glpi_id in part if glpi_id in present])
+    run.computer_count = int(
+        db.scalar(select(func.count()).select_from(ComputerRecord).where(ComputerRecord.check_run_id == run.id)) or 0
+    )
+
+
+def _completer_existants(db: Session, run: CheckRun, previous_id: int, glpi_ids: list[int]) -> None:
+    """La liste complète a déjà créé le poste : on y reporte le système et les logiciels connus."""
+    if not glpi_ids:
+        return
+    sources = {
+        record.glpi_id: record
+        for record in db.scalars(
+            select(ComputerRecord).where(
+                ComputerRecord.check_run_id == previous_id,
+                ComputerRecord.glpi_id.in_(glpi_ids),
+            )
+        )
+    }
     targets = {
         record.glpi_id: record
         for record in db.scalars(
             select(ComputerRecord).where(
                 ComputerRecord.check_run_id == run.id,
-                ComputerRecord.glpi_id.in_(ids),
+                ComputerRecord.glpi_id.in_(glpi_ids),
             )
         )
     }
-    ready: list[tuple[ComputerRecord, ComputerRecord]] = []
-    for glpi_id in ids:
+    for glpi_id, target in targets.items():
         source = sources.get(glpi_id)
-        target = targets.get(glpi_id)
-        if source is None or target is None:
+        if source is None:
             continue
         target.os_name = source.os_name
         target.os_version = source.os_version
         target.os_build = source.os_build
+        target.last_inventory_at = source.last_inventory_at
         target.location = ""
         target.computer_type = ""
-        ready.append((target, source))
-    if not ready:
+    db.flush()
+    target_ids = [record.id for record in targets.values()]
+    if target_ids:
+        db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id.in_(target_ids)))
+        db.execute(delete(AgentRecord).where(AgentRecord.computer_id.in_(target_ids)))
+    _copier_logiciels(db, run.id, previous_id, glpi_ids)
+
+
+def _copier_lot(db: Session, run: CheckRun, previous_id: int, glpi_ids: list[int]) -> None:
+    if not glpi_ids:
         return
-    target_ids = [target.id for target, _source in ready]
-    db.execute(delete(SoftwareInstall).where(SoftwareInstall.computer_id.in_(target_ids)))
-    db.execute(delete(AgentRecord).where(AgentRecord.computer_id.in_(target_ids)))
-    for target, source in ready:
-        for software in source.software:
-            db.add(
-                SoftwareInstall(
-                    computer_id=target.id,
-                    name=software.name,
-                    publisher=software.publisher,
-                    version=software.version,
-                )
-            )
+    source = aliased(ComputerRecord)
+    db.execute(
+        insert(ComputerRecord).from_select(
+            [
+                "check_run_id",
+                "glpi_id",
+                "name",
+                "group_name",
+                "location",
+                "computer_type",
+                "os_name",
+                "os_version",
+                "os_build",
+                "last_inventory_at",
+            ],
+            select(
+                literal(run.id),
+                source.glpi_id,
+                source.name,
+                source.group_name,
+                literal(""),
+                literal(""),
+                source.os_name,
+                source.os_version,
+                source.os_build,
+                source.last_inventory_at,
+            ).where(source.check_run_id == previous_id, source.glpi_id.in_(glpi_ids)),
+        )
+    )
+    db.flush()
+    _copier_logiciels(db, run.id, previous_id, glpi_ids)
+
+
+def _copier_logiciels(db: Session, run_id: int, previous_id: int, glpi_ids: list[int]) -> None:
+    if not glpi_ids:
+        return
+    copied = aliased(ComputerRecord)
+    origin = aliased(ComputerRecord)
+    installed = aliased(SoftwareInstall)
+    db.execute(
+        insert(SoftwareInstall).from_select(
+            ["computer_id", "name", "publisher", "version"],
+            select(copied.id, installed.name, installed.publisher, installed.version)
+            .select_from(installed)
+            .join(origin, installed.computer_id == origin.id)
+            .join(copied, (copied.glpi_id == origin.glpi_id) & (copied.check_run_id == run_id))
+            .where(origin.check_run_id == previous_id, origin.glpi_id.in_(glpi_ids)),
+        )
+    )
     db.flush()
 
 
-def finalize_run(db: Session, run: CheckRun, reprise: int = 0) -> CheckRun:
+def finalize_run(db: Session, run: CheckRun, reprise: int = 0, relus: int = 0) -> CheckRun:
     """Clôture la vérification déjà écrite, sans la réécrire."""
     now = utcnow()
     previous = latest_successful(db)
@@ -503,8 +578,14 @@ def finalize_run(db: Session, run: CheckRun, reprise: int = 0) -> CheckRun:
     run.computer_count = len(records)
     run.progress_current = 100
     run.progress_total = 100
-    if reprise:
-        run.message = f"Collecte terminée : {_postes(len(records))}, dont {_postes(reprise)} repris sans relecture."
+    removed = previous_ids - current_ids
+    if relus == 0 and reprise and not removed:
+        run.message = f"Aucune modification récente : {_postes(len(records))} repris sans relecture."
+    elif reprise:
+        run.message = (
+            f"Collecte terminée : {_postes(len(records))}, "
+            f"dont {_postes(reprise)} repris et {_postes(relus)} relus."
+        )
     else:
         run.message = f"Collecte terminée : {_postes(len(records))}."
     run.summary_json = json.dumps(
@@ -632,31 +713,32 @@ def run_verification(
             live = _LiveCatalog()
             meter = ProgressMeter(5)
             previous = latest_successful(db)
-            sources: dict[int, ComputerRecord] = {}
             known: dict[int, datetime | None] = {}
             if previous is not None:
-                loaded = db.scalars(
-                    select(ComputerRecord)
-                    .where(ComputerRecord.check_run_id == previous.id)
-                    .options(selectinload(ComputerRecord.software), selectinload(ComputerRecord.agent))
-                ).all()
-                sources = {record.glpi_id: record for record in loaded}
+                loaded = db.scalars(select(ComputerRecord).where(ComputerRecord.check_run_id == previous.id)).all()
                 known = {
                     record.glpi_id: record.last_inventory_at
                     for record in loaded
                     if not _nom_systeme_illisible(record.os_name)
                 }
             reprise = {"count": 0}
+            relus = {"count": 0}
 
             def on_progress(index: int, total_steps: int, step: str, read: int, total: int | None, chunk=None) -> None:
                 if _annulation_demandee(db, run.id):
                     raise VerificationCancelled()
                 rows = chunk or []
+                if step == "repérage":
+                    pourcent = meter.update("ordinateurs", read, total)
+                    _publish(db, run, pourcent, f"Repérage de {_postes(read)} : seules les modifications seront lues.")
+                    return
                 if step == "reprise":
-                    _reprendre_postes(db, run, sources, rows)
+                    _copier_inchanges(db, run, previous, rows)
                     reprise["count"] = len(rows)
                     _publish(db, run, meter.floor, f"Reprise de {_postes(len(rows))} inchangés, sans relecture.")
                     return
+                if step == "ordinateurs" and rows:
+                    relus["count"] += len(rows)
                 noter_page(db, run, live, step, rows)
                 if step not in _METER_STEPS:
                     return
@@ -679,7 +761,12 @@ def run_verification(
         message = "La lecture GLPI a échoué." if not detail else f"La lecture GLPI a échoué : {detail}"
         save_check(db, [], run.origin, error=message, run=run)
         raise
-    return finalize_run(db, run, reprise=reprise["count"] if not settings.demo_active else 0)
+    return finalize_run(
+        db,
+        run,
+        reprise=reprise["count"] if not settings.demo_active else 0,
+        relus=relus["count"] if not settings.demo_active else 0,
+    )
 
 
 def _spawn_verification(app, run_id: int) -> None:

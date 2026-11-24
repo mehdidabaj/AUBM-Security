@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from collections import defaultdict
@@ -13,6 +14,7 @@ from app.glpi.errors import MESSAGES, GlpiError
 from app.glpi.normalize import extract_build, label, linked_id, normalize_name, parse_glpi_datetime
 from app.glpi.types import ComputerItem, SoftwareItem
 
+logger = logging.getLogger(__name__)
 USER_AGENT = "glpi-maj-web/1.0"
 PAGE_SIZE = 500
 VERSION_BATCH = 50
@@ -103,15 +105,22 @@ class GlpiClient:
         return self._paginate("Item_SoftwareVersion", {"expand_dropdowns": "false"}, on_page=on_page)
 
     def collect(self, on_progress=None, known: dict[int, datetime | None] | None = None) -> list[ComputerItem]:
-        """Lit le nom, le service, le système et les logiciels des postes nouveaux ou modifiés.
+        """Lit le nom, le service, le système et les logiciels.
 
-        known associe un identifiant GLPI à la date déjà enregistrée. Une date identique
-        ou plus ancienne évite de relire le système et les logiciels.
+        La première fois, tout le parc est lu. Ensuite, seul un index (identifiant et date)
+        est demandé. Le système et les logiciels ne sont relus que pour un poste nouveau
+        ou modifié depuis la date déjà enregistrée.
         """
 
         def report(index: int, label: str, read: int, total: int | None, chunk: list | None) -> None:
             if on_progress:
                 on_progress(index, PLANNED_STEPS, label, read, total, chunk or [])
+
+        if known:
+            index = self._try_index()
+            if index is not None:
+                self._collect_changed(index, known, report)
+                return []
 
         named: list[dict] = []
 
@@ -162,6 +171,97 @@ class GlpiClient:
         )
         self._report_links(link_rows, report)
         return assemble(computers, os_rows, softwares, versions, link_rows)
+
+    def _collect_changed(self, index: list[dict], known: dict[int, datetime | None], report) -> None:
+        unchanged, pending = _split_index(index, known)
+        total = len(index)
+        report(0, "repérage", total, total, [])
+        if unchanged:
+            report(1, "reprise", len(unchanged), total, [{"id": glpi_id} for glpi_id in unchanged])
+        link_rows: list[dict] = []
+        seen = len(unchanged)
+        if not pending:
+            report(1, "postes", seen, total, [])
+        for glpi_id in pending:
+            raw = self._resolve_group_names([self._computer(glpi_id)])[0]
+            seen += 1
+            report(0, "ordinateurs", seen, total, [raw])
+            systems = self._resolve_os_labels(
+                self._subitems(glpi_id, "Item_OperatingSystem", {"expand_dropdowns": "true"})
+            )
+            report(1, "systèmes", seen, total, systems)
+            link_rows.extend(self._subitems(glpi_id, "Item_SoftwareVersion"))
+            report(1, "postes", seen, total, [])
+        version_ids = _unique_ids(row.get("softwareversions_id") for row in link_rows)
+        versions = self._fetch_many(
+            "SoftwareVersion",
+            version_ids,
+            on_page=lambda read, total_count, chunk: report(2, "versions", read, total_count, chunk),
+        )
+        software_ids = _unique_ids(row.get("softwares_id") for row in versions)
+        self._fetch_many(
+            "Software",
+            software_ids,
+            on_page=lambda read, total_count, chunk: report(3, "logiciels", read, total_count, chunk),
+        )
+        self._report_links(link_rows, report)
+
+    def _try_index(self) -> list[dict] | None:
+        try:
+            found = self._search_computers()
+        except (GlpiError, httpx.HTTPError, json.JSONDecodeError, ValueError, TypeError, KeyError):
+            logger.warning("L'index GLPI est indisponible, la liste complète des postes sera lue.")
+            return None
+        return found or None
+
+    def _search_computers(self) -> list[dict]:
+        """Index léger : identifiant et date de modification, sans le système ni les logiciels."""
+        rows: list[dict] = []
+        start = 0
+        total: int | None = None
+        while True:
+            params = {
+                "forcedisplay[0]": "2",
+                "forcedisplay[1]": "19",
+                "sort": "19",
+                "order": "DESC",
+                "range": f"{start}-{start + self.page_size - 1}",
+            }
+            response = self._request("GET", "search/Computer", params=params)
+            self._raise_for_glpi(response)
+            body = response.json()
+            if isinstance(body, dict):
+                chunk = body.get("data") or []
+                if body.get("totalcount") is not None:
+                    total = int(body["totalcount"])
+            elif isinstance(body, list):
+                chunk = body
+            else:
+                chunk = []
+            if total is None:
+                total = _content_range_total(response.headers.get("Content-Range"))
+            if not isinstance(chunk, list) or not chunk:
+                break
+            for row in chunk:
+                parsed = _index_row(row)
+                if parsed is not None:
+                    rows.append(parsed)
+            start += len(chunk)
+            if total is not None and start >= total:
+                break
+            if total is None and len(chunk) < self.page_size:
+                break
+        return rows
+
+    def _computer(self, computer_id: int) -> dict:
+        response = self._request("GET", f"Computer/{computer_id}")
+        self._raise_for_glpi(response)
+        body = response.json()
+        if isinstance(body, list):
+            body = body[0] if body else {}
+        if not isinstance(body, dict) or "id" not in body:
+            raise GlpiError("GLPI_HTTP", f"Le poste {computer_id} est illisible.")
+        return body
 
     def _report_links(self, link_rows: list[dict], report) -> None:
         if not link_rows:
@@ -355,6 +455,31 @@ def _error_code(response: httpx.Response) -> str | None:
         if code in blob:
             return code
     return None
+
+
+def _index_row(row: object) -> dict | None:
+    if not isinstance(row, dict):
+        return None
+    raw_id = row.get("2", row.get("id"))
+    try:
+        glpi_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    return {"id": glpi_id, "date_mod": row.get("19", row.get("date_mod"))}
+
+
+def _split_index(index: list[dict], known: dict[int, datetime | None]) -> tuple[list[int], list[int]]:
+    unchanged: list[int] = []
+    pending: list[int] = []
+    for row in index:
+        glpi_id = int(row["id"])
+        previous = known.get(glpi_id)
+        current = parse_glpi_datetime(row.get("date_mod"))
+        if previous is not None and current is not None and current <= previous:
+            unchanged.append(glpi_id)
+        else:
+            pending.append(glpi_id)
+    return unchanged, pending
 
 
 def _split_changes(computers: list[dict], known: dict[int, datetime | None] | None) -> tuple[list[dict], list[dict]]:

@@ -92,6 +92,26 @@ def _client_factory(payload: dict, sink: dict, page_size: int = 2, fail_on: dict
             sink["killed"] = sink.get("killed", 0) + 1
             sink["session_token"] = request.headers.get("session-token")
             return httpx.Response(200, json={"ok": True})
+        full = request.url.path.rstrip("/")
+        if full.endswith("/search/Computer"):
+            sink.setdefault("listed", []).append("search/Computer")
+            indexed = [{"2": row["id"], "19": row.get("date_mod") or ""} for row in resources["Computer"]]
+            start_text, end_text = request.url.params["range"].split("-")
+            start, end = int(start_text), int(end_text)
+            chunk = indexed[start : end + 1]
+            total = len(indexed)
+            header = f"{start}-{start + len(chunk) - 1}/{total}" if chunk else f"*/{total}"
+            return httpx.Response(
+                200,
+                json={"totalcount": total, "count": len(chunk), "data": chunk},
+                headers={"Content-Range": header},
+            )
+        single = re.fullmatch(r".*/Computer/(\d+)", full)
+        if single:
+            computer_id = int(single.group(1))
+            sink.setdefault("details", []).append((computer_id, "Computer"))
+            row = next(item for item in resources["Computer"] if int(item["id"]) == computer_id)
+            return httpx.Response(200, json=row)
         if fail_on and fail_on.get("session_once") and not sink.get("session_failed"):
             sink["session_failed"] = True
             return httpx.Response(401, json=["ERROR_SESSION_TOKEN_INVALID", "expiree"])
@@ -471,6 +491,10 @@ def test_deuxieme_collecte_ne_relit_que_les_postes_modifies(app):
         assert second.computer_count == 2
         assert json.loads(second.summary_json)["postes_retires"] == [3]
         assert "repris" in second.message
+        assert "relus" in second.message
+        assert "search/Computer" in sink["listed"]
+        assert "Computer" not in sink["listed"]
+        assert sink["fetched"]["SoftwareVersion"] == [101]
         relus = {computer_id for computer_id, _kind in sink.get("details", [])}
         assert relus == {2}
         by_id = {computer.glpi_id: computer for computer in second.computers}
@@ -493,6 +517,38 @@ def test_deuxieme_collecte_ne_relit_que_les_postes_modifies(app):
         restored = {computer.glpi_id: computer for computer in third.computers}
         assert restored[1].os_name == "Windows 11"
         assert restored[1].os_version == "26H2"
+    finally:
+        db.close()
+
+
+def test_collecte_identique_ne_relit_aucun_logiciel(app):
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    app.state.settings.demo_mode = "off"
+    app.state.settings.glpi_app_token = "app-token"
+    app.state.settings.glpi_user_token = "user-token"
+    db = app.state.SessionLocal()
+    try:
+        run_verification(
+            db,
+            app.state.settings,
+            http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, {}))),
+        )
+        sink: dict = {}
+        second = run_verification(
+            db,
+            app.state.settings,
+            http=httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink))),
+        )
+        assert second.computer_count == 3
+        assert "Aucune modification récente" in second.message
+        assert sink.get("details", []) == []
+        assert "SoftwareVersion" not in sink.get("fetched", {})
+        assert "search/Computer" in sink["listed"]
+        assert "Computer" not in sink["listed"]
+        by_id = {computer.glpi_id: computer for computer in second.computers}
+        assert by_id[1].software[0].name == "Google Chrome"
+        assert by_id[2].software[0].name == "Microsoft Office 2016"
+        assert by_id[3].software == []
     finally:
         db.close()
 
