@@ -164,9 +164,16 @@ def test_identifiant_de_service_resolu_a_part(app):
     app.state.settings.glpi_app_token = "app-token"
     app.state.settings.glpi_user_token = "user-token"
     http = httpx.Client(transport=httpx.MockTransport(_client_factory(payload, sink)))
+    recorded: list[dict] = []
+
+    def on_progress(_index, _steps, label, _read, _total, chunk):
+        if label == "ordinateurs":
+            recorded.extend(chunk)
+
     with GlpiClient(app.state.settings, http=http, page_size=2) as client:
-        computers = client.collect()
+        computers = client.collect(on_progress=on_progress)
     assert computers[0].group_name == "Compta"
+    assert recorded[0]["groups_id"] == "Compta"
     assert sink["fetched"]["Group"] == [4]
 
 

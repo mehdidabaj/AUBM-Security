@@ -113,12 +113,15 @@ class GlpiClient:
             if on_progress:
                 on_progress(index, PLANNED_STEPS, label, read, total, chunk or [])
 
-        computers = self._paginate(
-            "Computer",
-            {},
-            on_page=lambda read, total, chunk: report(0, "ordinateurs", read, total, chunk),
-        )
-        computers = self._resolve_group_names(computers)
+        named: list[dict] = []
+
+        def on_computers(read: int, total: int | None, chunk: list) -> None:
+            page = self._resolve_group_names(chunk)
+            named.extend(page)
+            report(0, "ordinateurs", read, total, page)
+
+        self._paginate("Computer", {}, on_page=on_computers)
+        computers = named
         os_rows: list[dict] = []
         link_rows: list[dict] = []
         unchanged, pending = _split_changes(computers, known)
