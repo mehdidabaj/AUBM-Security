@@ -18,13 +18,17 @@ def get_with_retries(
     headers: dict | None = None,
     params: dict | None = None,
     attempts: int = 3,
+    timeout: float | None = None,
     sleep=time.sleep,
 ) -> httpx.Response:
     delay = 1.0
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            response = client.get(url, headers=headers, params=params)
+            options = {}
+            if timeout is not None:
+                options["timeout"] = timeout
+            response = client.get(url, headers=headers, params=params, **options)
         except httpx.HTTPError as exc:
             last_error = exc
             if attempt + 1 == attempts:

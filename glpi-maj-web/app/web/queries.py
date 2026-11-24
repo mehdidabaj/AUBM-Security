@@ -286,11 +286,14 @@ def journal(db: Session, limit: int = 30) -> list[SourceRun]:
 
 def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
     """Avis et alertes CERT-FR récents, qu'ils concernent le parc ou non."""
-    payload = payload_of(get_cache(db, "certfr", "catalog"))
+    payload = payload_of(get_cache(db, "certfr", "bulletins"))
+    raw = payload.get("items")
+    if not raw:
+        raw = payload_of(get_cache(db, "certfr", "catalog")).get("bulletins") or []
     installed = _installed_slugs(db)
     alertes: list[dict] = []
     avis: list[dict] = []
-    for row in payload.get("bulletins") or []:
+    for row in raw:
         if not isinstance(row, dict):
             continue
         slugs = [slug for slug in row.get("products") or [] if slug in PRODUCTS]
@@ -311,7 +314,20 @@ def security_bulletins(db: Session, *, linked_only: bool = False) -> dict:
             avis.append(item)
     alertes.sort(key=lambda item: item["revised"], reverse=True)
     avis.sort(key=lambda item: item["revised"], reverse=True)
-    return {"alertes": alertes, "avis": avis, "jours": VULN_RECENT_DAYS, "lies_seulement": linked_only}
+    run = db.scalar(select(SourceRun).where(SourceRun.source == "toutes").order_by(SourceRun.id.desc()))
+    en_cours = run is not None and run.status == "running" and run.finished_at is None
+    certfr = db.scalar(select(SourceRun).where(SourceRun.source == "certfr").order_by(SourceRun.id.desc()))
+    erreur = ""
+    if not alertes and not avis and certfr is not None and certfr.status == "error":
+        erreur = certfr.error or certfr.message
+    return {
+        "alertes": alertes,
+        "avis": avis,
+        "jours": VULN_RECENT_DAYS,
+        "lies_seulement": linked_only,
+        "en_cours": en_cours,
+        "erreur": erreur,
+    }
 
 
 def _installed_slugs(db: Session) -> set[str]:

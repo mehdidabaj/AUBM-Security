@@ -411,10 +411,9 @@ def test_page_securite_liste_avis_et_alertes_hors_parc(client, app, admin):
         put_cache(
             db,
             "certfr",
-            "catalog",
+            "bulletins",
             {
-                "cves": {},
-                "bulletins": [
+                "items": [
                     {
                         "reference": "CERTFR-2026-ALE-001",
                         "title": "Alerte dans Google Chrome",

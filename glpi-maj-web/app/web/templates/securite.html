@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Sécurité{% endblock %}
 {% block content %}
+<div id="securite-live"{% if vue.en_cours %} hx-get="/securite?lien={% if vue.lies_seulement %}parc{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
 <section class="card">
   <h1>Avis et alertes de sécurité</h1>
   <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours, qu'ils concernent le parc ou non. Un bulletin « Parc » cite un logiciel installé.</p>
+  {% if vue.en_cours %}
+  <p>Mise à jour des sources en cours. Cette page se remplit dès que le CERT-FR est lu.</p>
+  {% endif %}
+  {% if vue.erreur %}
+  <p class="alert">{{ vue.erreur }}</p>
+  {% endif %}
   <form class="filters" method="get" action="/securite">
     <label>Affichage
       <select name="lien" onchange="this.form.submit()">
@@ -27,7 +34,7 @@
         <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">Aucune alerte récente. Lancez « Mettre à jour les sources ».</td></tr>
+      <tr><td colspan="4">{% if vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucune alerte récente. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -46,9 +53,10 @@
         <td>{% if row.lie %}<span class="badge important">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">Aucun avis récent. Lancez « Mettre à jour les sources ».</td></tr>
+      <tr><td colspan="4">{% if vue.en_cours %}Lecture du CERT-FR en cours.{% else %}Aucun avis récent. Lancez « Mettre à jour les sources ».{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
+</div>
 {% endblock %}

@@ -73,6 +73,30 @@ def test_analyse_msrc_endoflife_et_flux():
     assert {item["id"] for item in alerte["cves"]} == {"CVE-2026-1000", "CVE-2026-9999"}
 
 
+def test_les_bulletins_restent_listes_si_une_fiche_echoue(app):
+    from app.sources.catalog import PRODUCTS
+    from app.sources.service import _collect_certfr
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.rstrip("/").endswith("/avis/json"):
+            return httpx.Response(200, json=json.loads(_read("certfr_avis_index.json")))
+        if url.rstrip("/").endswith("/alerte/json"):
+            return httpx.Response(200, json=json.loads(_read("certfr_alerte_index.json")))
+        return httpx.Response(500, text="fiche indisponible")
+
+    db = app.state.SessionLocal()
+    try:
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        count = _collect_certfr(db, http, list(PRODUCTS.values()), lambda _seconds: None, datetime(2026, 11, 18))
+        assert count == 3
+        references = {row["reference"] for row in payload_of(get_cache(db, "certfr", "bulletins"))["items"]}
+        assert "CERTFR-2026-AVI-0002" in references
+        assert "CERTFR-2024-AVI-0001" not in references
+    finally:
+        db.close()
+
+
 def test_certfr_ne_retient_que_le_dernier_bulletin_de_chaque_logiciel():
     from app.sources.catalog import PRODUCTS
     from app.sources.service import _certfr_latest_rows, _newest_cve
@@ -219,7 +243,7 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
         assert certfr["CVE-2026-9999"]["alert"] is True
         assert certfr["CVE-2026-9999"]["cvss"] == 8.8
         assert certfr["CVE-2026-9999"]["severite"] == "critique"
-        bulletins = {row["reference"]: row for row in payload_of(get_cache(db, "certfr", "catalog"))["bulletins"]}
+        bulletins = {row["reference"]: row for row in payload_of(get_cache(db, "certfr", "bulletins"))["items"]}
         assert set(bulletins) == {"CERTFR-2026-ALE-001", "CERTFR-2026-AVI-0001", "CERTFR-2026-AVI-0002"}
         assert bulletins["CERTFR-2026-ALE-001"]["alert"] is True
         assert bulletins["CERTFR-2026-ALE-001"]["products"] == ["chrome"]

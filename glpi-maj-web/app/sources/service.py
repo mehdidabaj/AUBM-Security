@@ -505,19 +505,28 @@ def _collect_kev(db, client, products, sleep, now) -> int:
 
 
 def _collect_certfr(db, client, products, sleep, now) -> int:
-    cached = get_cache(db, "certfr", "catalog")
-    cached_payload = payload_of(cached) if cached else {}
-    if (
-        cached
-        and cached.checked_at
-        and cached.checked_at.date() == now.date()
-        and not cached.last_error
-        and "bulletins" in cached_payload
-    ):
-        return len((cached_payload.get("cves") or {}))
+    listed = get_cache(db, "certfr", "bulletins")
+    listed_items = payload_of(listed).get("items") or []
+    catalog = get_cache(db, "certfr", "catalog")
+    lists_ready = (
+        listed is not None
+        and listed.checked_at
+        and listed.checked_at.date() == now.date()
+        and not listed.last_error
+        and listed_items
+    )
+    catalog_ready = (
+        catalog is not None
+        and catalog.checked_at
+        and catalog.checked_at.date() == now.date()
+        and not catalog.last_error
+    )
+    if lists_ready and catalog_ready:
+        return len(listed_items)
     avis = _certfr_index(client, CERTFR_AVIS_URL, sleep)
     alertes = _certfr_index(client, CERTFR_ALERTE_URL, sleep)
     bulletins = _recent_bulletins(avis, alertes, products, now)
+    put_cache(db, "certfr", "bulletins", {"items": bulletins}, origin="live", now=now)
     latest = _certfr_latest_rows(avis, alertes, products)
     chosen = {slug: str(row.get("reference") or "") for slug, row in latest.items()}
     cves: dict[str, dict] = {}
@@ -527,15 +536,18 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         if not reference or reference in seen_refs:
             continue
         seen_refs.add(reference)
-        response = get_with_retries(
-            client,
-            _certfr_detail_url(item),
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            sleep=sleep,
-        )
-        if response.status_code >= 400:
-            raise RuntimeError(f"CERT-FR a répondu HTTP {response.status_code} pour {reference}.")
-        parsed = parse_certfr(response.json(), kind=item["kind"])
+        try:
+            response = get_with_retries(
+                client,
+                _certfr_detail_url(item),
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                sleep=sleep,
+            )
+            if response.status_code >= 400:
+                continue
+            parsed = parse_certfr(response.json(), kind=item["kind"])
+        except Exception:
+            continue
         parsed["revised"] = str(item.get("last_revision_date") or "")
         owned = [slug for slug in _certfr_slugs(parsed, products) if chosen.get(slug) == reference]
         cve = _newest_cve(parsed["cves"])
@@ -545,8 +557,8 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
         parsed["cvss"] = score.get("cvss")
         parsed["severite"] = severity_name(parsed["cvss"], alert=parsed["alert"], cvss_label=score.get("cvss_label") or "")
         _remember_certfr(cves, parsed, cve["id"], owned)
-    put_cache(db, "certfr", "catalog", {"cves": cves, "bulletins": bulletins}, origin="live", now=now)
-    return len(cves)
+    put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
+    return len(bulletins)
 
 
 def _recent_bulletins(avis: list, alertes: list, products: list[Product], now: datetime) -> list[dict]:
@@ -603,7 +615,13 @@ def _cve_score(client, cve_id: str, sleep) -> dict:
 
 
 def _certfr_index(client, url: str, sleep) -> list:
-    response = get_with_retries(client, url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, sleep=sleep)
+    response = get_with_retries(
+        client,
+        url,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        timeout=90,
+        sleep=sleep,
+    )
     if response.status_code >= 400:
         raise RuntimeError(f"CERT-FR a répondu HTTP {response.status_code}.")
     payload = response.json()
