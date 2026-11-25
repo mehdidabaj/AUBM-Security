@@ -23,7 +23,7 @@ from app.sources.cache import is_end_of_life, payload_of, version_target
 from app.sources.cache import get_cache
 from app.sources.catalog import PRODUCTS
 from app.sources.parsers import severity_name
-from app.timeutils import utcnow
+from app.timeutils import format_gmt, utcnow
 
 WINDOWS_GUIDE = "https://learn.microsoft.com/windows/release-health/windows11-release-information"
 OFFICE_GUIDE = "https://learn.microsoft.com/lifecycle/products/?products=office"
@@ -266,35 +266,18 @@ def _version_action(db, run, computer, slug, installs, critical, important) -> C
 def _other_actions(run, computer, window, moment) -> list[ComputedAction]:
     actions = []
     limit = moment - timedelta(days=window)
-    inventory_recent = computer.last_inventory_at is not None and computer.last_inventory_at >= limit
-    agent = computer.agent
-    agent_stale = agent is not None and (agent.last_contact is None or agent.last_contact < limit)
-    inventory_stale = computer.last_inventory_at is None or computer.last_inventory_at < limit
-    if agent_stale and not inventory_recent:
+    offline = computer.last_inventory_at is None or computer.last_inventory_at < limit
+    if offline:
+        seen = format_gmt(computer.last_inventory_at) if computer.last_inventory_at else "inconnue"
         actions.append(
             _make(
                 run,
                 computer,
                 "",
                 "agent_silencieux",
-                "autre",
-                "Agent sans remontée depuis plus de 7 jours",
-                agent.version if agent else "",
-                "",
-                [],
-                "",
-            )
-        )
-    elif agent is not None and not agent_stale and inventory_stale:
-        actions.append(
-            _make(
-                run,
-                computer,
-                "",
-                "inventaire",
-                "autre",
-                "Forcer un inventaire : glpi-agent --force",
-                agent.version,
+                "important",
+                "Démarrer le poste ou forcer l'agent installé",
+                seen,
                 "",
                 [],
                 "",

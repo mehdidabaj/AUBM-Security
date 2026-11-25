@@ -18,7 +18,7 @@ from app.glpi.normalize import extract_build, label, linked_id, normalize_name
 from app.glpi.types import ComputerItem
 from app.models.actions import ComputedAction
 from app.models.inventory import AgentRecord, CheckRun, ComputerRecord, SoftwareInstall
-from app.timeutils import utcnow
+from app.timeutils import format_gmt, utcnow
 
 logger = logging.getLogger(__name__)
 _VERIFICATION_LOCK = threading.Lock()
@@ -939,6 +939,7 @@ def _postes_deja_lus(db: Session, run: CheckRun, settings: Settings | None) -> t
                 "classe": classe,
                 "detail": detail,
                 "lien": glpi_computer_url(settings, record.glpi_id) if settings is not None else "",
+                "modification": format_gmt(record.last_inventory_at),
             }
         )
     return postes, total

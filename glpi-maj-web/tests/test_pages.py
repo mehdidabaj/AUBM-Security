@@ -14,6 +14,19 @@ def test_l_heure_affichee_reste_en_gmt():
     assert format_gmt(None) == "—"
 
 
+def test_modification_glpi_et_poste_sans_connexion(client, admin):
+    login(client, "admin", "motdepasse-admin")
+    liste = client.get("/postes")
+    assert "Modification GLPI" in liste.text
+    recent = client.get("/postes/1")
+    assert "Dernière modification GLPI" in recent.text
+    assert re.search(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}", recent.text)
+    assert "Démarrer le poste ou forcer" not in recent.text
+    ancien = client.get("/postes/17")
+    assert "Démarrer le poste ou forcer" in ancien.text
+    assert "heure GMT" in ancien.text
+
+
 def test_tableau_de_bord_et_scripts_locaux(client, admin):
     login(client, "admin", "motdepasse-admin")
     page = client.get("/")

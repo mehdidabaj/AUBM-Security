@@ -35,4 +35,5 @@ def include_low(db: Session) -> bool:
 
 
 def stale_days(db: Session) -> int:
-    return 7
+    """Un poste sans modification GLPI depuis ce délai n'est plus considéré comme connecté."""
+    return 3

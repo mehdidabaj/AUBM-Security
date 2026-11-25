@@ -28,7 +28,7 @@ WRAP = Alignment(wrap_text=True, vertical="center")
 FIXED = [
     "Poste",
     "Service",
-    "Dernier inventaire",
+    "Dernière modification GLPI",
     "Tout est à jour ?",
     "Priorité",
     "Nombre d'actions",

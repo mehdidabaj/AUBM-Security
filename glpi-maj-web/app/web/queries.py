@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -105,6 +106,7 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
                 "actions": len([item for item in actions if item.severity != "autre"]),
                 "logiciels": names,
                 "lien": glpi_computer_url(settings, computer.glpi_id),
+                "modification": computer.last_inventory_at,
             }
         )
     sort = params.get("tri") or "nom"
@@ -114,6 +116,8 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
         if sort == "priorite":
             order = {"critique": 0, "important": 1, "faible": 2, "lecture": 3, "a_jour": 4}
             return order.get(row["priorite"], 9)
+        if sort == "modification":
+            return row["modification"] or datetime.min
         value = row.get(sort, row["nom"])
         if isinstance(value, str):
             return value.lower()
