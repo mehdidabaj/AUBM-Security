@@ -21,9 +21,12 @@ def test_modification_glpi_et_poste_sans_connexion(client, admin):
     recent = client.get("/postes/1")
     assert "Dernière modification GLPI" in recent.text
     assert re.search(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}", recent.text)
-    assert "Démarrer le poste ou forcer" not in recent.text
+    assert "depuis plus de 3 jours" not in recent.text
+    assert "depuis plus de 3 jours" not in liste.text
     ancien = client.get("/postes/17")
-    assert "Démarrer le poste ou forcer" in ancien.text
+    assert "depuis plus de 3 jours" in ancien.text
+    assert "forcer l" in ancien.text
+    assert "depuis plus de 3 jours" not in ancien.text.split("<h2>Actions</h2>", 1)[-1]
     assert "heure GMT" in ancien.text
 
 

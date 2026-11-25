@@ -178,10 +178,8 @@ def test_regles_fixes_seuils_et_suivi(app):
         assert _kinds(db, 11)["sans_logiciel:"].title == "Poste sans logiciel remonté"
         assert _kinds(db, 12)["linux:"].title == "Appliquer les mises à jour Debian"
         assert "sans_logiciel:" not in _kinds(db, 12)
-        silence = _kinds(db, 13)["agent_silencieux:"]
-        assert silence.title == "Démarrer le poste ou forcer l'agent installé"
-        assert silence.severity == "important"
-        assert _kinds(db, 14)["agent_silencieux:"].title == silence.title
+        assert "agent_silencieux:" not in _kinds(db, 13)
+        assert "agent_silencieux:" not in _kinds(db, 14)
         assert priority_of(list(_kinds(db, 4).values())) == "critique"
         assert is_up_to_date(list(_kinds(db, 9).values()), False) is True
         assert is_up_to_date(list(_kinds(db, 10).values()), False) is True
@@ -299,8 +297,8 @@ def test_parc_demo_couvre_les_cas_demandes(app):
         assert any(row.kind == "office_migration" and row.product_slug == "office-2021" for row in by_computer[7])
         assert any(row.kind == "advanced_ip" for row in by_computer[12])
         assert any(row.kind == "linux" for row in by_computer[16])
-        assert any(row.kind == "agent_silencieux" for row in by_computer[17])
-        assert any(row.kind == "agent_silencieux" for row in by_computer[18])
+        assert not any(row.kind == "agent_silencieux" for row in by_computer.get(17, []))
+        assert not any(row.kind == "agent_silencieux" for row in by_computer.get(18, []))
         assert any(row.kind == "sans_logiciel" for row in by_computer[19])
         java = next(row for row in by_computer[11] if row.product_slug == "java8")
         assert java.installed_version == "8u401"

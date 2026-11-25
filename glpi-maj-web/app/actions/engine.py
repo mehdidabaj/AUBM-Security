@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -13,7 +13,6 @@ from app.actions.rules import (
     SEVERITY_RANK,
     fixed_rules,
     include_low,
-    stale_days,
     threshold,
 )
 from app.actions.versions import highest_version, is_outdated, parse_version
@@ -23,7 +22,7 @@ from app.sources.cache import is_end_of_life, payload_of, version_target
 from app.sources.cache import get_cache
 from app.sources.catalog import PRODUCTS
 from app.sources.parsers import severity_name
-from app.timeutils import format_gmt, utcnow
+from app.timeutils import utcnow
 
 WINDOWS_GUIDE = "https://learn.microsoft.com/windows/release-health/windows11-release-information"
 OFFICE_GUIDE = "https://learn.microsoft.com/lifecycle/products/?products=office"
@@ -38,13 +37,11 @@ BUILD_FEATURES = {
 }
 
 
-def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, now: datetime | None = None) -> list[ComputedAction]:
-    moment = now or utcnow()
+def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None) -> list[ComputedAction]:
     seed_mappings(db)
     rules = fixed_rules(db)
     critical = threshold(db, "severity_critical", 9)
     important = threshold(db, "severity_important", 7)
-    window = stale_days(db)
     db.execute(delete(ComputedAction).where(ComputedAction.check_run_id == run.id))
     from sqlalchemy.orm import selectinload
 
@@ -56,7 +53,7 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, 
     ).all()
     created: list[ComputedAction] = []
     for computer in computers:
-        created.extend(_computer_actions(db, run, computer, rules, critical, important, window, moment))
+        created.extend(_computer_actions(db, run, computer, rules, critical, important))
     db.add_all(created)
     db.flush()
     _update_summary(db, run, previous, created)
@@ -64,18 +61,16 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, 
     return created
 
 
-def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int], now: datetime | None = None) -> None:
+def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int]) -> None:
     """Recalcule les actions des postes indiqués, sans clôturer la vérification."""
     if not glpi_ids:
         return
     from sqlalchemy.orm import selectinload
 
-    moment = now or utcnow()
     seed_mappings(db)
     rules = fixed_rules(db)
     critical = threshold(db, "severity_critical", 9)
     important = threshold(db, "severity_important", 7)
-    window = stale_days(db)
     db.execute(
         delete(ComputedAction).where(
             ComputedAction.check_run_id == run.id,
@@ -89,7 +84,7 @@ def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int], now: datet
     ).all()
     created: list[ComputedAction] = []
     for computer in records:
-        created.extend(_computer_actions(db, run, computer, rules, critical, important, window, moment))
+        created.extend(_computer_actions(db, run, computer, rules, critical, important))
     if created:
         db.add_all(created)
     db.flush()
@@ -160,7 +155,7 @@ def is_up_to_date(actions: list[ComputedAction], count_low: bool) -> bool:
     return not any(action.severity in blocking for action in actions)
 
 
-def _computer_actions(db, run, computer, rules, critical, important, window, moment) -> list[ComputedAction]:
+def _computer_actions(db, run, computer, rules, critical, important) -> list[ComputedAction]:
     actions: list[ComputedAction] = []
     actions.extend(_windows_actions(db, run, computer, rules))
     grouped: dict[str, list] = defaultdict(list)
@@ -182,7 +177,7 @@ def _computer_actions(db, run, computer, rules, critical, important, window, mom
         version_action = _version_action(db, run, computer, slug, installs, critical, important)
         if version_action is not None:
             actions.append(version_action)
-    actions.extend(_other_actions(run, computer, window, moment))
+    actions.extend(_other_actions(run, computer))
     return actions
 
 
@@ -263,26 +258,8 @@ def _version_action(db, run, computer, slug, installs, critical, important) -> C
     return _make(run, computer, slug, "version", severity, title, installed, _display_target(target), cves, url)
 
 
-def _other_actions(run, computer, window, moment) -> list[ComputedAction]:
+def _other_actions(run, computer) -> list[ComputedAction]:
     actions = []
-    limit = moment - timedelta(days=window)
-    offline = computer.last_inventory_at is None or computer.last_inventory_at < limit
-    if offline:
-        seen = format_gmt(computer.last_inventory_at) if computer.last_inventory_at else "inconnue"
-        actions.append(
-            _make(
-                run,
-                computer,
-                "",
-                "agent_silencieux",
-                "important",
-                "Démarrer le poste ou forcer l'agent installé",
-                seen,
-                "",
-                [],
-                "",
-            )
-        )
     linux = _linux_server(computer)
     if linux:
         actions.append(

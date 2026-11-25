@@ -11,6 +11,9 @@
     <div><dt>Système</dt><dd>{{ detail.computer.os_name }} {{ detail.computer.os_version }}{% if detail.computer.os_build %} ({{ detail.computer.os_build }}){% endif %}</dd></div>
     <div><dt>Dernière modification GLPI</dt><dd>{{ detail.computer.last_inventory_at|gmt }} (heure GMT)</dd></div>
   </dl>
+  {% if detail.hors_ligne %}
+  <p>Ce poste n'a pas été modifié dans GLPI depuis plus de 3 jours. Le démarrer ou forcer l'agent installé.</p>
+  {% endif %}
   <p><a href="{{ detail.lien }}" target="_blank" rel="noopener">Fiche GLPI</a></p>
 </section>
 

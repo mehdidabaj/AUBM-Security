@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.actions.engine import done_action_keys, follow_up_for, is_up_to_date, priority_of
 from app.actions.mapping import resolve_slug
-from app.actions.rules import include_low
+from app.actions.rules import include_low, stale_days
 from app.actions.versions import is_outdated, parse_version
 from app.glpi.service import glpi_computer_url, latest_successful, visible_run
 from app.models.actions import ComputedAction
@@ -23,6 +23,7 @@ from app.sources.cache import get_cache, payload_of, source_overview, version_ta
 from app.sources.catalog import PRODUCTS, match_key
 from app.sources.service import VULN_RECENT_DAYS
 from app.config import Settings
+from app.timeutils import utcnow
 
 SEVERITY_LABELS = {
     "critique": "Critique",
@@ -217,9 +218,12 @@ def computer_detail(db: Session, settings: Settings, glpi_id: int) -> dict | Non
             }
         )
     en_cours = run.status == "running" and not actions
+    limit = utcnow() - timedelta(days=stale_days(db))
+    hors_ligne = computer.last_inventory_at is None or computer.last_inventory_at < limit
     return {
         "computer": computer,
         "actions": detailed,
+        "hors_ligne": hors_ligne,
         "priorite": "lecture" if en_cours else priority_of(actions),
         "a_jour": False if en_cours else is_up_to_date(actions, include_low(db)),
         "en_cours": run.status == "running",
