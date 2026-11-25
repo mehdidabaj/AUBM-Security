@@ -5,11 +5,38 @@ import re
 from tests.conftest import csrf_from, login
 
 
+def test_l_heure_affichee_reste_en_gmt():
+    from datetime import datetime
+
+    from app.timeutils import format_gmt
+
+    assert format_gmt(datetime(2026, 11, 25, 10, 59)) == "25/11/2026 10:59"
+    assert format_gmt(None) == "—"
+
+
+def test_modification_glpi_et_poste_sans_connexion(client, admin):
+    login(client, "admin", "motdepasse-admin")
+    liste = client.get("/postes")
+    assert "Modification GLPI" in liste.text
+    recent = client.get("/postes/1")
+    assert "Dernière modification GLPI" in recent.text
+    assert re.search(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}", recent.text)
+    assert "depuis plus de 3 jours" not in recent.text
+    assert "depuis plus de 3 jours" not in liste.text
+    ancien = client.get("/postes/17")
+    assert "depuis plus de 3 jours" in ancien.text
+    assert "forcer l" in ancien.text
+    assert "depuis plus de 3 jours" not in ancien.text.split("<h2>Actions</h2>", 1)[-1]
+    assert "heure GMT" in ancien.text
+
+
 def test_tableau_de_bord_et_scripts_locaux(client, admin):
     login(client, "admin", "motdepasse-admin")
     page = client.get("/")
     assert page.status_code == 200
     assert "Bonjour" in page.text
+    assert "heure GMT" in page.text
+    assert "heure de Paris" not in page.text
     assert "Postes analysés" in page.text
     assert ">20<" in page.text
     assert "/static/vendor/chart.umd.min.js" in page.text
@@ -18,6 +45,33 @@ def test_tableau_de_bord_et_scripts_locaux(client, admin):
     assert "jsdelivr" not in page.text
     assert client.get("/static/vendor/htmx.min.js").status_code == 200
     assert client.get("/static/vendor/chart.umd.min.js").status_code == 200
+
+
+def test_action_faite_quitte_la_liste(client, admin):
+    login(client, "admin", "motdepasse-admin")
+    page = client.get("/postes/4")
+    titre = "Migrer vers Windows 11 26H2"
+    assert titre in page.text
+    bloc = page.text.split(titre, 1)[1]
+    key = re.search(r'name="action_key" value="([^"]+)"', bloc)
+    assert key
+    saved = client.post(
+        "/postes/4/suivi",
+        data={
+            "csrf_token": csrf_from(page.text),
+            "action_key": key.group(1),
+            "status": "fait",
+            "technician": "Camille",
+            "comment": "Migration faite",
+        },
+        follow_redirects=False,
+    )
+    assert saved.status_code == 303
+    again = client.get("/postes/4")
+    assert titre not in again.text
+    assert "Migrer vers Microsoft 365 Apps" in again.text
+    assert "Suivi : Fait" in again.text
+    assert "Migration faite" in again.text
 
 
 def test_filtre_et_tri_des_postes(client, admin):

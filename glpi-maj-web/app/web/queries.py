@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.actions.engine import follow_up_for, is_up_to_date, priority_of
+from app.actions.engine import done_action_keys, follow_up_for, is_up_to_date, priority_of
 from app.actions.mapping import resolve_slug
-from app.actions.rules import include_low
+from app.actions.rules import include_low, stale_days
 from app.actions.versions import is_outdated, parse_version
 from app.glpi.service import glpi_computer_url, latest_successful, visible_run
 from app.models.actions import ComputedAction
@@ -22,6 +23,7 @@ from app.sources.cache import get_cache, payload_of, source_overview, version_ta
 from app.sources.catalog import PRODUCTS, match_key
 from app.sources.service import VULN_RECENT_DAYS
 from app.config import Settings
+from app.timeutils import utcnow
 
 SEVERITY_LABELS = {
     "critique": "Critique",
@@ -35,8 +37,12 @@ STATUS_LABELS = {"a_faire": "À faire", "en_cours": "En cours", "fait": "Fait"}
 
 
 def actions_by_computer(db: Session, run: CheckRun) -> dict[int, list[ComputedAction]]:
+    """Actions encore à faire. Une action faite, ou devenue inutile après mise à jour, n'y figure pas."""
+    done = done_action_keys(db)
     grouped: dict[int, list[ComputedAction]] = defaultdict(list)
     for action in db.scalars(select(ComputedAction).where(ComputedAction.check_run_id == run.id)):
+        if action.action_key in done:
+            continue
         grouped[action.glpi_computer_id].append(action)
     return grouped
 
@@ -101,6 +107,7 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
                 "actions": len([item for item in actions if item.severity != "autre"]),
                 "logiciels": names,
                 "lien": glpi_computer_url(settings, computer.glpi_id),
+                "modification": computer.last_inventory_at,
             }
         )
     sort = params.get("tri") or "nom"
@@ -110,6 +117,8 @@ def computer_views(db: Session, settings: Settings, params: dict) -> dict:
         if sort == "priorite":
             order = {"critique": 0, "important": 1, "faible": 2, "lecture": 3, "a_jour": 4}
             return order.get(row["priorite"], 9)
+        if sort == "modification":
+            return row["modification"] or datetime.min
         value = row.get(sort, row["nom"])
         if isinstance(value, str):
             return value.lower()
@@ -209,9 +218,12 @@ def computer_detail(db: Session, settings: Settings, glpi_id: int) -> dict | Non
             }
         )
     en_cours = run.status == "running" and not actions
+    limit = utcnow() - timedelta(days=stale_days(db))
+    hors_ligne = computer.last_inventory_at is None or computer.last_inventory_at < limit
     return {
         "computer": computer,
         "actions": detailed,
+        "hors_ligne": hors_ligne,
         "priorite": "lecture" if en_cours else priority_of(actions),
         "a_jour": False if en_cours else is_up_to_date(actions, include_low(db)),
         "en_cours": run.status == "running",

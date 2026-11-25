@@ -8,7 +8,7 @@ import httpx
 
 from app.sources.cache import get_cache, payload_of, put_cache, source_overview, version_target
 from app.sources.limiter import RateLimiter
-from app.sources.parsers import parse_certfr, parse_cve_score, parse_feed, parse_msrc, severity_name
+from app.sources.parsers import parse_certfr, parse_cve_score, parse_feed, parse_github_releases, parse_msrc, severity_name
 from app.sources.service import _nvd_get, load_fallback_if_needed, update_sources
 from app.sources.winget import parse_manifests, winget_commands
 from app.timeutils import utcnow
@@ -167,6 +167,48 @@ def test_collecte_certfr_remplace_le_bulletin_suivi(app):
         assert watch.current_revised == "2026-11-18"
     finally:
         db.close()
+
+
+def test_certfr_ecarte_un_vieux_bulletin_et_une_autre_version():
+    from datetime import datetime
+
+    from app.sources.catalog import PRODUCTS
+    from app.sources.service import _certfr_latest_rows
+
+    products = [PRODUCTS["chrome"], PRODUCTS["windows-11"], PRODUCTS["java8"]]
+    avis = [
+        {
+            "reference": "CERTFR-2018-AVI-0099",
+            "title": "Vulnérabilité dans Google Chrome",
+            "last_revision_date": "2026-11-20T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2026-AVI-0100",
+            "title": "Vulnérabilité dans Google Chrome",
+            "last_revision_date": "2026-06-01T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2012-AVI-0004",
+            "title": "Vulnérabilité dans Windows Server 2012",
+            "last_revision_date": "2026-11-18T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2026-AVI-0200",
+            "title": "Multiples vulnérabilités dans Microsoft Windows",
+            "last_revision_date": "2026-11-01T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2026-AVI-0300",
+            "title": "Vulnérabilité dans Oracle Java SE 21",
+            "last_revision_date": "2026-11-18T00:00:00",
+        },
+    ]
+    latest = _certfr_latest_rows(avis, [], products, datetime(2026, 11, 25))
+    assert latest["chrome"]["reference"] == "CERTFR-2026-AVI-0100"
+    assert latest["windows-11"]["reference"] == "CERTFR-2026-AVI-0200"
+    assert "java8" not in latest
+    ancient = _certfr_latest_rows(avis[:1], [], products, datetime(2026, 11, 25))
+    assert "chrome" not in ancient
 
 
 def test_certfr_ne_retient_que_le_dernier_bulletin_de_chaque_logiciel():
@@ -475,6 +517,27 @@ def test_un_depot_github_absent_laisse_passer_les_autres(app):
         assert github.status == "success"
         assert "Incomplet" in github.message
         assert get_cache(db, "github", "powershell").last_error
+    finally:
+        db.close()
+
+
+def test_powershell_garde_la_ligne_lts_et_la_sts(app):
+    parsed = parse_github_releases(
+        [
+            {"tag_name": "v7.7.0-rc.1", "prerelease": True, "html_url": "https://github.com/rc"},
+            {"tag_name": "v7.7.0", "prerelease": False, "html_url": "https://github.com/77"},
+            {"tag_name": "v7.6.10", "prerelease": False, "html_url": "https://github.com/76"},
+            {"tag_name": "v7.6.9", "prerelease": False, "html_url": "https://github.com/769"},
+        ]
+    )
+    assert parsed["version"] == "7.7.0"
+    assert parsed["lines"] == {"7.6": "7.6.10", "7.7": "7.7.0"}
+    db = app.state.SessionLocal()
+    try:
+        load_fallback_if_needed(db)
+        put_cache(db, "github", "powershell", parsed, origin="live")
+        assert version_target(db, "powershell", "7.6.10.0")["version"] == "7.6.10"
+        assert version_target(db, "powershell", "7.5.4")["version"] == "7.7.0"
     finally:
         db.close()
 

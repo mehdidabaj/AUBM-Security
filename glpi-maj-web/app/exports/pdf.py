@@ -59,7 +59,7 @@ def story_for(model: dict) -> list:
     styles = _styles()
     story = [
         Paragraph("Plan de mise à jour du parc", styles["title"]),
-        Paragraph(f"Édité le {model['date']} (heure de Paris)", styles["meta"]),
+        Paragraph(f"Édité le {model['date']} (heure GMT)", styles["meta"]),
         Spacer(1, 0.3 * cm),
     ]
     story.append(Paragraph(SECTIONS[0], styles["h"]))

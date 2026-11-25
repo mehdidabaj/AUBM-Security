@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-
 from sqlalchemy.orm import Session
 
 from app.actions.engine import is_up_to_date, priority_of
@@ -12,21 +9,13 @@ from app.actions.versions import highest_version, parse_version
 from app.config import Settings
 from app.glpi.service import glpi_computer_url, latest_successful
 from app.sources.catalog import PRODUCTS
+from app.timeutils import format_gmt, utcnow
 from app.web.queries import SEVERITY_LABELS, _computers, actions_by_computer, dashboard, software_rows
 from app.sources.cache import source_overview
 
-PARIS = ZoneInfo("Europe/Paris")
 
-
-def paris(value: datetime | None) -> str:
-    if value is None:
-        return "—"
-    aware = value.replace(tzinfo=timezone.utc)
-    return aware.astimezone(PARIS).strftime("%d/%m/%Y %H:%M")
-
-
-def now_paris() -> str:
-    return datetime.now(PARIS).strftime("%d/%m/%Y %H:%M")
+def now_gmt() -> str:
+    return format_gmt(utcnow())
 
 
 def build_model(db: Session, settings: Settings) -> dict:
@@ -48,7 +37,7 @@ def build_model(db: Session, settings: Settings) -> dict:
                 {
                     "nom": computer.name,
                     "service": computer.group_name or "—",
-                    "inventaire": paris(computer.last_inventory_at),
+                    "inventaire": format_gmt(computer.last_inventory_at),
                     "a_jour": "Oui" if is_up_to_date(actions, count_low) else "Non",
                     "priorite": priority,
                     "priorite_libelle": SEVERITY_LABELS.get(priority, priority),
@@ -78,7 +67,7 @@ def build_model(db: Session, settings: Settings) -> dict:
         vigilance.append("Aucun point de vigilance.")
     ordre = sorted(produits, key=lambda slug: produits[slug].lower())
     return {
-        "date": now_paris(),
+        "date": now_gmt(),
         "chiffres": {
             "analyses": board.get("analyses", 0),
             "a_jour": board.get("a_jour", 0),

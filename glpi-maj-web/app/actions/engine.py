@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -13,10 +14,16 @@ from app.actions.rules import (
     SEVERITY_RANK,
     fixed_rules,
     include_low,
-    stale_days,
     threshold,
 )
-from app.actions.versions import highest_version, is_outdated, parse_version
+from app.actions.versions import (
+    adobe_file_version_hides_track,
+    highest_version,
+    is_outdated,
+    parse_version,
+    windows_patch_behind,
+)
+from app.glpi.normalize import canonical_windows_build
 from app.models.actions import ActionFollowUp, ComputedAction
 from app.models.inventory import CheckRun, ComputerRecord
 from app.sources.cache import is_end_of_life, payload_of, version_target
@@ -38,13 +45,11 @@ BUILD_FEATURES = {
 }
 
 
-def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, now: datetime | None = None) -> list[ComputedAction]:
-    moment = now or utcnow()
+def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None) -> list[ComputedAction]:
     seed_mappings(db)
     rules = fixed_rules(db)
     critical = threshold(db, "severity_critical", 9)
     important = threshold(db, "severity_important", 7)
-    window = stale_days(db)
     db.execute(delete(ComputedAction).where(ComputedAction.check_run_id == run.id))
     from sqlalchemy.orm import selectinload
 
@@ -56,7 +61,8 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, 
     ).all()
     created: list[ComputedAction] = []
     for computer in computers:
-        created.extend(_computer_actions(db, run, computer, rules, critical, important, window, moment))
+        _repair_windows_build(computer)
+        created.extend(_computer_actions(db, run, computer, rules, critical, important))
     db.add_all(created)
     db.flush()
     _update_summary(db, run, previous, created)
@@ -64,18 +70,16 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None, 
     return created
 
 
-def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int], now: datetime | None = None) -> None:
+def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int]) -> None:
     """Recalcule les actions des postes indiqués, sans clôturer la vérification."""
     if not glpi_ids:
         return
     from sqlalchemy.orm import selectinload
 
-    moment = now or utcnow()
     seed_mappings(db)
     rules = fixed_rules(db)
     critical = threshold(db, "severity_critical", 9)
     important = threshold(db, "severity_important", 7)
-    window = stale_days(db)
     db.execute(
         delete(ComputedAction).where(
             ComputedAction.check_run_id == run.id,
@@ -89,7 +93,8 @@ def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int], now: datet
     ).all()
     created: list[ComputedAction] = []
     for computer in records:
-        created.extend(_computer_actions(db, run, computer, rules, critical, important, window, moment))
+        _repair_windows_build(computer)
+        created.extend(_computer_actions(db, run, computer, rules, critical, important))
     if created:
         db.add_all(created)
     db.flush()
@@ -135,6 +140,11 @@ def follow_up_for(db: Session, action_key: str) -> ActionFollowUp | None:
     return db.scalar(select(ActionFollowUp).where(ActionFollowUp.action_key == action_key))
 
 
+def done_action_keys(db: Session) -> set[str]:
+    """Actions déjà faites, à la main. Elles ne restent pas dans la liste à traiter."""
+    return set(db.scalars(select(ActionFollowUp.action_key).where(ActionFollowUp.status == "fait")))
+
+
 def priority_of(actions: list[ComputedAction]) -> str:
     rank = 0
     label = "a_jour"
@@ -155,7 +165,7 @@ def is_up_to_date(actions: list[ComputedAction], count_low: bool) -> bool:
     return not any(action.severity in blocking for action in actions)
 
 
-def _computer_actions(db, run, computer, rules, critical, important, window, moment) -> list[ComputedAction]:
+def _computer_actions(db, run, computer, rules, critical, important) -> list[ComputedAction]:
     actions: list[ComputedAction] = []
     actions.extend(_windows_actions(db, run, computer, rules))
     grouped: dict[str, list] = defaultdict(list)
@@ -177,7 +187,7 @@ def _computer_actions(db, run, computer, rules, critical, important, window, mom
         version_action = _version_action(db, run, computer, slug, installs, critical, important)
         if version_action is not None:
             actions.append(version_action)
-    actions.extend(_other_actions(run, computer, window, moment))
+    actions.extend(_other_actions(run, computer))
     return actions
 
 
@@ -220,7 +230,7 @@ def _windows_actions(db, run, computer, rules) -> list[ComputedAction]:
             )
         )
     target = version_target(db, f"windows-{feature.lower()}")
-    if target and computer.os_build and is_outdated(computer.os_build, target["version"], "ge"):
+    if target and computer.os_build and windows_patch_behind(computer.os_build, target["version"]):
         actions.append(
             _make(
                 run,
@@ -243,8 +253,10 @@ def _version_action(db, run, computer, slug, installs, critical, important) -> C
     if not versions:
         return None
     installed = highest_version(versions)
-    target = version_target(db, slug)
+    target = version_target(db, slug, installed)
     if installed is None or target is None:
+        return None
+    if slug in {"reader", "acrobat"} and adobe_file_version_hides_track(installed, target["version"]):
         return None
     outdated = is_outdated(installed, target["version"], target.get("mode") or "ge")
     if not outdated:
@@ -258,43 +270,8 @@ def _version_action(db, run, computer, slug, installs, critical, important) -> C
     return _make(run, computer, slug, "version", severity, title, installed, _display_target(target), cves, url)
 
 
-def _other_actions(run, computer, window, moment) -> list[ComputedAction]:
+def _other_actions(run, computer) -> list[ComputedAction]:
     actions = []
-    limit = moment - timedelta(days=window)
-    inventory_recent = computer.last_inventory_at is not None and computer.last_inventory_at >= limit
-    agent = computer.agent
-    agent_stale = agent is not None and (agent.last_contact is None or agent.last_contact < limit)
-    inventory_stale = computer.last_inventory_at is None or computer.last_inventory_at < limit
-    if agent_stale and not inventory_recent:
-        actions.append(
-            _make(
-                run,
-                computer,
-                "",
-                "agent_silencieux",
-                "autre",
-                "Agent sans remontée depuis plus de 7 jours",
-                agent.version if agent else "",
-                "",
-                [],
-                "",
-            )
-        )
-    elif agent is not None and not agent_stale and inventory_stale:
-        actions.append(
-            _make(
-                run,
-                computer,
-                "",
-                "inventaire",
-                "autre",
-                "Forcer un inventaire : glpi-agent --force",
-                agent.version,
-                "",
-                [],
-                "",
-            )
-        )
     linux = _linux_server(computer)
     if linux:
         actions.append(
@@ -359,8 +336,12 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
     if not isinstance(certfr, dict):
         return []
     found = []
+    oldest = utcnow().year - 1
     for cve_id, row in certfr.items():
         if not isinstance(row, dict) or slug not in (row.get("products") or []):
+            continue
+        year = _bulletin_year(row)
+        if year and year < oldest:
             continue
         alert = bool(row.get("alert"))
         cvss = row.get("cvss")
@@ -377,6 +358,12 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
             }
         )
     return found
+
+
+def _bulletin_year(row: dict) -> int:
+    blob = " ".join(str(row.get(key) or "") for key in ("reference", "url", "certfr_url"))
+    match = re.search(r"CERTFR-(\d{4})-", blob.upper())
+    return int(match.group(1)) if match else 0
 
 
 def _best_url(cves: list[dict], fallback: str) -> str:
@@ -404,6 +391,12 @@ def _update_summary(db, run, previous, created) -> None:
     previous_keys = {item.action_key for item in previous_actions}
     summary["nouvelles_actions"] = sorted(item.action_key for item in created if item.action_key not in previous_keys)
     run.summary_json = json.dumps(summary, ensure_ascii=False)
+
+
+def _repair_windows_build(computer) -> None:
+    repaired = canonical_windows_build(computer.os_build)
+    if repaired and repaired != computer.os_build:
+        computer.os_build = repaired
 
 
 def windows_feature(os_name: str, os_version: str, os_build: str) -> str | None:

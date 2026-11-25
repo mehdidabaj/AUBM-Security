@@ -3,7 +3,7 @@
   <p class="muted">{{ progression.lus }} poste{% if progression.lus != 1 %}s{% endif %} déjà lu{% if progression.lus != 1 %}s{% endif %}. Les lignes se mettent à jour quand un poste ou un logiciel apparaît.</p>
   <div class="progress-results">
     <table>
-      <thead><tr><th>Poste</th><th>Service</th><th>Système</th><th>Logiciels</th><th>Résultat</th></tr></thead>
+      <thead><tr><th>Poste</th><th>Service</th><th>Système</th><th>Logiciels</th><th>Modification GLPI</th><th>Résultat</th></tr></thead>
       <tbody>
         {% for poste in progression.postes %}
         <tr>
@@ -11,6 +11,7 @@
           <td>{{ poste.service or "—" }}</td>
           <td>{{ poste.systeme or "—" }}</td>
           <td>{{ poste.logiciels or "—" }}</td>
+          <td>{{ poste.modification or "—" }}</td>
           <td>
             <span class="badge {{ poste.classe }}">{{ poste.resultat }}</span>
             {% if poste.detail and poste.classe != "lecture" %}<div class="muted">{{ poste.detail }}</div>{% endif %}

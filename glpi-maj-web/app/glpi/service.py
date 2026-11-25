@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy import delete, func, insert, literal, select
 from sqlalchemy.orm import Session, aliased, selectinload
 
-from app.actions.engine import priority_of
+from app.actions.engine import done_action_keys, priority_of
 from app.actions.rules import SEVERITY_RANK
 from app.config import Settings
 from app.glpi.client import GlpiClient, _software_item, assemble
@@ -18,7 +18,7 @@ from app.glpi.normalize import extract_build, label, linked_id, normalize_name
 from app.glpi.types import ComputerItem
 from app.models.actions import ComputedAction
 from app.models.inventory import AgentRecord, CheckRun, ComputerRecord, SoftwareInstall
-from app.timeutils import utcnow
+from app.timeutils import format_gmt, utcnow
 
 logger = logging.getLogger(__name__)
 _VERIFICATION_LOCK = threading.Lock()
@@ -909,8 +909,11 @@ def _postes_deja_lus(db: Session, run: CheckRun, settings: Settings | None) -> t
             .options(selectinload(ComputerRecord.software))
         )
     )
+    done = done_action_keys(db)
     grouped: dict[int, list[ComputedAction]] = {}
     for action in db.scalars(select(ComputedAction).where(ComputedAction.check_run_id == run.id)):
+        if action.action_key in done:
+            continue
         grouped.setdefault(action.glpi_computer_id, []).append(action)
     postes = []
     for record in records:
@@ -936,6 +939,7 @@ def _postes_deja_lus(db: Session, run: CheckRun, settings: Settings | None) -> t
                 "classe": classe,
                 "detail": detail,
                 "lien": glpi_computer_url(settings, record.glpi_id) if settings is not None else "",
+                "modification": format_gmt(record.last_inventory_at),
             }
         )
     return postes, total

@@ -20,6 +20,11 @@
           "URL": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-5001"
         },
         {
+          "ProductID": ["12001"],
+          "Description": {"Value": "Preview 10.0.26300.10075"},
+          "URL": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-5001"
+        },
+        {
           "ProductID": ["12000"],
           "Description": {"Value": "26200.9974"},
           "URL": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-5001"

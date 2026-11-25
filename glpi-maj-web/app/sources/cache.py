@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.actions.versions import compare_versions
+from app.actions.versions import compare_versions, powershell_channel_target
 from app.models.sources import SourceCache
 from app.sources.catalog import PRODUCTS, SOURCE_LABELS
 from app.timeutils import utcnow
@@ -103,7 +103,7 @@ def _source_payloads(db: Session) -> dict[tuple[str, str], dict]:
     return cached
 
 
-def version_target(db: Session, slug: str) -> dict | None:
+def version_target(db: Session, slug: str, installed: str | None = None) -> dict | None:
     """Version à atteindre : donnée vivante, sinon plancher du référentiel de secours."""
     product = PRODUCTS.get(slug)
     payloads = _source_payloads(db)
@@ -116,6 +116,16 @@ def version_target(db: Session, slug: str) -> dict | None:
             live_source = source
             break
     floor = payloads.get(("fallback", slug)) or {}
+    if slug == "powershell" and installed:
+        chosen = powershell_channel_target(
+            (live or {}).get("lines") or {},
+            installed,
+            floor.get("version"),
+            (live or {}).get("version") or floor.get("version"),
+        )
+        if chosen:
+            base = live or floor
+            return {**base, "version": chosen, "source": live_source or "fallback", "mode": "ge"}
     if live and floor.get("version") and product is not None and product.version_mode == "gt":
         compared = compare_versions(live["version"], floor["version"])
         if compared is None or compared <= 0:
