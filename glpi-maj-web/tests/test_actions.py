@@ -226,6 +226,13 @@ def test_certfr_relie_les_cves_au_produit(app):
                         "alert": True,
                         "products": ["firefox"],
                     },
+                    "CVE-2018-0001": {
+                        "id": "CVE-2018-0001",
+                        "url": "https://www.cert.cyber.gouv.fr/avis/CERTFR-2018-AVI-0099/",
+                        "summary": "Ancien avis Chrome",
+                        "alert": True,
+                        "products": ["chrome"],
+                    },
                 }
             },
             origin="live",
@@ -238,6 +245,7 @@ def test_certfr_relie_les_cves_au_produit(app):
         assert "cert.cyber.gouv.fr/avis/" in cves["CVE-2026-2857"]["certfr_url"]
         assert cves["CVE-2026-9999"]["certfr_alert"] is True
         assert "CVE-2026-4000" not in cves
+        assert "CVE-2018-0001" not in cves
         assert action.severity == "critique"
         assert "CERTFR-2026-ALE-001" in action.source_url
     finally:

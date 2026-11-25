@@ -169,6 +169,48 @@ def test_collecte_certfr_remplace_le_bulletin_suivi(app):
         db.close()
 
 
+def test_certfr_ecarte_un_vieux_bulletin_et_une_autre_version():
+    from datetime import datetime
+
+    from app.sources.catalog import PRODUCTS
+    from app.sources.service import _certfr_latest_rows
+
+    products = [PRODUCTS["chrome"], PRODUCTS["windows-11"], PRODUCTS["java8"]]
+    avis = [
+        {
+            "reference": "CERTFR-2018-AVI-0099",
+            "title": "Vulnérabilité dans Google Chrome",
+            "last_revision_date": "2026-11-20T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2026-AVI-0100",
+            "title": "Vulnérabilité dans Google Chrome",
+            "last_revision_date": "2026-06-01T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2012-AVI-0004",
+            "title": "Vulnérabilité dans Windows Server 2012",
+            "last_revision_date": "2026-11-18T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2026-AVI-0200",
+            "title": "Multiples vulnérabilités dans Microsoft Windows",
+            "last_revision_date": "2026-11-01T00:00:00",
+        },
+        {
+            "reference": "CERTFR-2026-AVI-0300",
+            "title": "Vulnérabilité dans Oracle Java SE 21",
+            "last_revision_date": "2026-11-18T00:00:00",
+        },
+    ]
+    latest = _certfr_latest_rows(avis, [], products, datetime(2026, 11, 25))
+    assert latest["chrome"]["reference"] == "CERTFR-2026-AVI-0100"
+    assert latest["windows-11"]["reference"] == "CERTFR-2026-AVI-0200"
+    assert "java8" not in latest
+    ancient = _certfr_latest_rows(avis[:1], [], products, datetime(2026, 11, 25))
+    assert "chrome" not in ancient
+
+
 def test_certfr_ne_retient_que_le_dernier_bulletin_de_chaque_logiciel():
     from app.sources.catalog import PRODUCTS
     from app.sources.service import _certfr_latest_rows, _newest_cve

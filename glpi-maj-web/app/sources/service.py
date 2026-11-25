@@ -589,7 +589,7 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
     put_cache(db, "certfr", "bulletins", {"items": bulletins}, origin="live", now=now)
     _refresh_security_watches(db, client, sleep, avis=avis, alertes=alertes)
     _dire(db, f"Avis CERT-FR enregistrés ({len(bulletins)}). Lecture des fiches.")
-    latest = _certfr_latest_rows(avis, alertes, products)
+    latest = _certfr_latest_rows(avis, alertes, products, now)
     chosen = {slug: str(row.get("reference") or "") for slug, row in latest.items()}
     cves: dict[str, dict] = {}
     seen_refs: set[str] = set()
@@ -775,8 +775,9 @@ def _certfr_index(client, url: str, sleep) -> list:
     return payload
 
 
-def _certfr_latest_rows(avis: list, alertes: list, products: list[Product]) -> dict[str, dict]:
-    """Le bulletin le plus récent de chaque logiciel suivi."""
+def _certfr_latest_rows(avis: list, alertes: list, products: list[Product], now: datetime | None = None) -> dict[str, dict]:
+    """Le bulletin utile de chaque logiciel : récent, et qui parle de ce logiciel."""
+    oldest_year = now.year - 1 if now is not None else 0
     newest: dict[str, dict] = {}
     matcher = _SlugMatcher(products)
     for kind, rows in (("avis", avis), ("alerte", alertes)):
@@ -786,21 +787,53 @@ def _certfr_latest_rows(avis: list, alertes: list, products: list[Product]) -> d
             revised = _certfr_date(row.get("last_revision_date"))
             if revised is None:
                 continue
-            slugs = matcher.slugs(str(row.get("title") or ""))
+            title = str(row.get("title") or "")
+            year, number = _reference_parts(str(row.get("reference") or ""))
+            if year and oldest_year and year < oldest_year:
+                continue
+            precise = matcher.slugs(title, families=False)
+            slugs = precise or matcher.slugs(title)
             if not slugs:
                 continue
-            stamped = {**row, "kind": kind, "revised": revised}
             for slug in slugs:
+                stamped = {
+                    **row,
+                    "kind": kind,
+                    "revised": revised,
+                    "year": year,
+                    "number": number,
+                    "specific": slug in precise,
+                }
                 current = newest.get(slug)
                 if current is None or _certfr_is_newer(stamped, current):
                     newest[slug] = stamped
     return newest
 
 
+def _reference_parts(reference: str) -> tuple[int, int]:
+    match = re.search(r"CERTFR-(\d{4})-(?:AVI|ALE)-(\d+)", reference.upper())
+    if not match:
+        return (0, 0)
+    return (int(match.group(1)), int(match.group(2)))
+
+
 def _certfr_is_newer(candidate: dict, current: dict) -> bool:
-    if candidate["revised"] != current["revised"]:
-        return candidate["revised"] > current["revised"]
-    return candidate["kind"] == "alerte" and current["kind"] != "alerte"
+    """L'année du bulletin prime sur une simple retouche d'un avis ancien."""
+    candidate_rank = (
+        candidate.get("year") or 0,
+        candidate["revised"],
+        1 if candidate.get("specific") else 0,
+        candidate.get("number") or 0,
+        1 if candidate["kind"] == "alerte" else 0,
+    )
+    current_rank = (
+        current.get("year") or 0,
+        current["revised"],
+        1 if current.get("specific") else 0,
+        current.get("number") or 0,
+        1 if current["kind"] == "alerte" else 0,
+    )
+    return candidate_rank > current_rank
 
 
 def _newest_cve(cves: list[dict]) -> dict | None:
@@ -864,9 +897,6 @@ class _SlugMatcher:
         for product in products:
             patterns = [re.compile(rf"(?<![\w+]){re.escape(alias)}(?![\w+])") for alias in product.aliases]
             self._compiled.append((product.slug, patterns))
-        self._windows = re.compile(r"(?<![\w+])windows(?![\w+])")
-        self._office = re.compile(r"(?<![\w+])(?:office|microsoft 365)(?![\w+])")
-        self._java = re.compile(r"(?<![\w+])java(?![\w+])")
         self._windows_slugs = {product.slug for product in products if product.slug.startswith("windows")}
         self._office_slugs = {product.slug for product in products if product.slug.startswith("office") or product.slug == "m365"}
         self._java_slugs = {product.slug for product in products if product.slug == "java8"}
@@ -883,11 +913,11 @@ class _SlugMatcher:
                     break
         if not families:
             return found
-        if not any(slug.startswith("windows") for slug in found) and self._windows.search(key):
-            found |= self._windows_slugs
-        if not any(slug.startswith("office") or slug == "m365" for slug in found) and self._office.search(key):
-            found |= self._office_slugs
-        if "java8" not in found and self._java.search(key):
+        if not any(slug.startswith("windows") for slug in found):
+            found |= _windows_targets(key, self._windows_slugs)
+        if not any(slug.startswith("office") or slug == "m365" for slug in found):
+            found |= _office_targets(key, self._office_slugs)
+        if "java8" not in found and _mentions_java8(key):
             found |= self._java_slugs
         return found
 
@@ -916,18 +946,48 @@ def _family_slugs(text: str, products: list[Product], family: str, already: set[
     if family == "windows":
         if any(slug.startswith("windows") for slug in known):
             return set()
-        if not re.search(r"(?<![\w+])windows(?![\w+])", key):
-            return set()
-        return {product.slug for product in products if product.slug.startswith("windows")}
+        return _windows_targets(key, {product.slug for product in products if product.slug.startswith("windows")})
     if family == "office":
         if any(slug.startswith("office") or slug == "m365" for slug in known):
             return set()
-        if not re.search(r"(?<![\w+])(?:office|microsoft 365)(?![\w+])", key):
-            return set()
-        return {product.slug for product in products if product.slug.startswith("office") or product.slug == "m365"}
-    if any(slug == "java8" for slug in known) or not re.search(r"(?<![\w+])java(?![\w+])", key):
+        return _office_targets(key, {product.slug for product in products if product.slug.startswith("office") or product.slug == "m365"})
+    if any(slug == "java8" for slug in known) or not _mentions_java8(key):
         return set()
     return {product.slug for product in products if product.slug == "java8"}
+
+
+def _windows_targets(key: str, slugs: set[str]) -> set[str]:
+    """Windows 10 ou 11 seulement. Un vieux Windows ou un serveur ne compte pas."""
+    named = set()
+    if re.search(r"(?<![\w+])windows\s+10(?![\w+])", key):
+        named.add("windows-10")
+    if re.search(r"(?<![\w+])windows\s+11(?![\w+])", key):
+        named.add("windows-11")
+    named &= slugs
+    if named:
+        return named
+    if re.search(r"(?<![\w+])windows\s+(?:server\s+)?(?:xp|vista|7|8|2003|2008|2012|2016|2019|2022)(?![\w+])", key):
+        return set()
+    if re.search(r"(?<![\w+])windows(?![\w+])", key):
+        return {slug for slug in slugs if slug.startswith("windows")}
+    return set()
+
+
+def _office_targets(key: str, slugs: set[str]) -> set[str]:
+    if re.search(r"(?<![\w+])office\s+(?:200\d|2010)(?![\w+])", key):
+        return set()
+    if re.search(r"(?<![\w+])(?:office|microsoft 365)(?![\w+])", key):
+        return set(slugs)
+    return set()
+
+
+def _mentions_java8(key: str) -> bool:
+    """Java 8, ou Java sans numéro. Java 11, 17 ou 21 ne concerne pas le parc."""
+    if re.search(r"(?<![\w+])(?:java(?:\s*se)?\s*8|jre\s*8|java\s*1\.8|jre\s*1\.8)(?![\w+])", key):
+        return True
+    if re.search(r"(?<![\w+])java(?:\s*se)?\s*(?:[1-9]\d|1\.[0-7])(?![\w+])", key):
+        return False
+    return re.search(r"(?<![\w+])java(?![\w+])", key) is not None
 
 
 def _remember_certfr(cves: dict, parsed: dict, cve_id: str, slugs: list[str]) -> None:

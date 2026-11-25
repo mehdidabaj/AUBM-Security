@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from datetime import datetime
 
@@ -324,8 +325,12 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
     if not isinstance(certfr, dict):
         return []
     found = []
+    oldest = utcnow().year - 1
     for cve_id, row in certfr.items():
         if not isinstance(row, dict) or slug not in (row.get("products") or []):
+            continue
+        year = _bulletin_year(row)
+        if year and year < oldest:
             continue
         alert = bool(row.get("alert"))
         cvss = row.get("cvss")
@@ -342,6 +347,12 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
             }
         )
     return found
+
+
+def _bulletin_year(row: dict) -> int:
+    blob = " ".join(str(row.get(key) or "") for key in ("reference", "url", "certfr_url"))
+    match = re.search(r"CERTFR-(\d{4})-", blob.upper())
+    return int(match.group(1)) if match else 0
 
 
 def _best_url(cves: list[dict], fallback: str) -> str:
