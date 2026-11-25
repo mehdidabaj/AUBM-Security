@@ -352,11 +352,13 @@ def test_collecte_limitee_a_linventaire_etag_et_remplacement(app, tmp_path):
             for host in ("nvd.nist.gov", "known_exploited", "endoflife.date", "googleblog.com", "mozilla.org")
         )
         certfr = payload_of(get_cache(db, "certfr", "catalog"))["cves"]
-        assert list(certfr) == ["CVE-2026-9999"]
+        assert set(certfr) == {"CVE-2026-1000", "CVE-2026-9999"}
         assert certfr["CVE-2026-9999"]["products"] == ["chrome"]
+        assert certfr["CVE-2026-1000"]["products"] == ["chrome"]
         assert certfr["CVE-2026-9999"]["alert"] is True
         assert certfr["CVE-2026-9999"]["cvss"] == 8.8
         assert certfr["CVE-2026-9999"]["severite"] == "critique"
+        assert certfr["CVE-2026-1000"]["severite"] == "critique"
         bulletins = {row["reference"]: row for row in payload_of(get_cache(db, "certfr", "bulletins"))["items"]}
         assert set(bulletins) == {"CERTFR-2026-ALE-001", "CERTFR-2026-AVI-0001", "CERTFR-2026-AVI-0002"}
         assert bulletins["CERTFR-2026-ALE-001"]["alert"] is True

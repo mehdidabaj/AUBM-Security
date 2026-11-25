@@ -3,27 +3,29 @@
 {% block content %}
 <section class="card">
   <p><a href="/postes">Retour aux postes</a></p>
-  <h1>{{ detail.computer.name }}</h1>
-  <p><span class="badge {{ detail.priorite }}">{{ detail.priorite }}</span>
-    {% if detail.en_cours and not detail.actions %} Lecture en cours{% elif detail.a_jour %} À jour{% else %} À mettre à jour{% endif %}</p>
+  <div class="title-row">
+    <h1>{{ detail.computer.name }}</h1>
+    <span class="badge {{ detail.priorite }}">{{ gravites.get(detail.priorite, detail.priorite) }}</span>
+  </div>
+  <p class="muted">{% if detail.en_cours and not detail.actions %}Lecture en cours{% elif detail.a_jour and detail.priorite == "a_jour" %}À jour{% elif detail.a_jour %}Action faible encore ouverte{% else %}À mettre à jour{% endif %}</p>
   <dl class="facts">
     <div><dt>Service</dt><dd>{{ detail.computer.group_name or "—" }}</dd></div>
     <div><dt>Système</dt><dd>{{ detail.computer.os_name }} {{ detail.computer.os_version }}{% if detail.computer.os_build %} ({{ detail.computer.os_build }}){% endif %}</dd></div>
     <div><dt>Dernière modification GLPI</dt><dd>{{ detail.computer.last_inventory_at|gmt }} (heure GMT)</dd></div>
   </dl>
   {% if detail.hors_ligne %}
-  <p>Ce poste n'a pas été modifié dans GLPI depuis plus de 3 jours. Le démarrer ou forcer l'agent installé.</p>
+  <p class="notice">Ce poste n'a pas été modifié dans GLPI depuis plus de 3 jours. Le démarrer ou forcer l'agent installé.</p>
   {% endif %}
   <p><a href="{{ detail.lien }}" target="_blank" rel="noopener">Fiche GLPI</a></p>
 </section>
 
 <section class="card">
   <h2>Logiciels relevés</h2>
-  <ul>
+  <ul class="chips">
     {% for logiciel in detail.computer.software %}
-    <li>{{ logiciel.name }} — {{ logiciel.version or "version inconnue" }}</li>
+    <li><strong>{{ logiciel.name }}</strong><span>{{ logiciel.version or "version inconnue" }}</span></li>
     {% else %}
-    <li>Aucun logiciel inventorié.</li>
+    <li class="empty">Aucun logiciel inventorié.</li>
     {% endfor %}
   </ul>
 </section>
@@ -52,18 +54,34 @@
 <section class="card">
   <h2>Actions</h2>
   {% for item in detail.actions %}
-  <article class="action">
-    <h3><span class="badge {{ item.action.severity }}">{{ item.action.severity }}</span> {{ item.action.title }}</h3>
-    <p>{{ item.action.detail }}</p>
+  <article class="action action-{{ item.action.severity }}">
+    <h3><span class="badge {{ item.action.severity }}">{{ gravites.get(item.action.severity, item.action.severity) }}</span> {{ item.action.title }}</h3>
     {% if item.action.installed_version or item.action.target_version %}
-    <p>Installé : {{ item.action.installed_version or "—" }} · Cible : {{ item.action.target_version or "—" }}</p>
+    <div class="version-compare">
+      <div><span>Installé</span><strong>{{ item.action.installed_version or "—" }}</strong></div>
+      <div class="version-arrow" aria-hidden="true">→</div>
+      <div><span>Cible</span><strong>{{ item.action.target_version or "—" }}</strong></div>
+    </div>
+    {% elif item.action.detail %}
+    <p>{{ item.action.detail }}</p>
     {% endif %}
     {% if item.cves %}
-    <ul>
-      {% for cve in item.cves %}
-      <li>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}{% if cve.severite %} <span class="badge {{ cve.severite }}">{{ {"critique": "Critique", "important": "Important", "moyenne": "Moyenne", "faible": "Faible"}[cve.severite] }}</span>{% endif %}{% if cve.certfr %} ({% if cve.certfr_url and cve.certfr_url != cve.url %}<a href="{{ cve.certfr_url }}" target="_blank" rel="noopener">CERT-FR{% if cve.certfr_alert %} alerte{% endif %}</a>{% else %}CERT-FR{% if cve.certfr_alert %} alerte{% endif %}{% endif %}){% endif %}{% if cve.cvss is not none %} — CVSS {{ cve.cvss }}{% endif %}</li>
-      {% endfor %}
-    </ul>
+    <h4>Failles ({{ item.cves|length }})</h4>
+    <div class="flaw-scroll">
+      <table class="flaws">
+        <thead><tr><th>Identifiant</th><th>Gravité</th><th>CVSS</th><th>Source</th></tr></thead>
+        <tbody>
+          {% for cve in item.cves %}
+          <tr>
+            <td>{% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}</td>
+            <td>{% if cve.severite %}<span class="badge {{ cve.severite }}">{{ gravites.get(cve.severite, cve.severite) }}</span>{% else %}—{% endif %}</td>
+            <td>{% if cve.cvss is not none %}{{ cve.cvss }}{% else %}—{% endif %}</td>
+            <td>{% if cve.certfr %}{% if cve.certfr_url and cve.certfr_url != cve.url %}<a href="{{ cve.certfr_url }}" target="_blank" rel="noopener">CERT-FR{% if cve.certfr_alert %} alerte{% endif %}</a>{% else %}CERT-FR{% if cve.certfr_alert %} alerte{% endif %}{% endif %}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% endif %}
     {% if item.action.source_url %}
     <p><a href="{{ item.action.source_url }}" target="_blank" rel="noopener">Source de la recommandation</a></p>
@@ -85,8 +103,8 @@
       <label>Date
         <input type="date" name="followed_on" value="{{ item.suivi.followed_on.strftime('%Y-%m-%d') if item.suivi and item.suivi.followed_on else '' }}">
       </label>
-      <label>Commentaire
-        <textarea name="comment">{{ item.suivi.comment if item.suivi else "" }}</textarea>
+      <label class="wide">Commentaire
+        <textarea name="comment" rows="2">{{ item.suivi.comment if item.suivi else "" }}</textarea>
       </label>
       <button type="submit">Enregistrer le suivi</button>
     </form>

@@ -47,7 +47,15 @@ def render(request: Request, name: str, status_code: int = 200, **context) -> HT
                 csrf = row.csrf_token
     finally:
         db.close()
-    payload = {"request": request, "user": user, "csrf_token": csrf, "role_rank": ROLE_RANK}
+    from app.web.queries import SEVERITY_LABELS
+
+    payload = {
+        "request": request,
+        "user": user,
+        "csrf_token": csrf,
+        "role_rank": ROLE_RANK,
+        "gravites": SEVERITY_LABELS,
+    }
     payload.update(context)
     response = _templates(request).TemplateResponse(request, name, payload, status_code=status_code)
     if csrf:

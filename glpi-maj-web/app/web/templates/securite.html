@@ -3,7 +3,14 @@
 {% block content %}
 <div id="securite-live"{% if vue.en_cours %} hx-get="/securite?live=1&amp;lien={{ vue.lien }}&amp;n={{ vue.alertes|length + vue.avis|length }}&amp;etat=cours&amp;err={% if vue.erreur %}1{% else %}0{% endif %}" hx-trigger="every 2s" hx-select="#securite-live" hx-swap="outerHTML"{% endif %}>
 <section class="card">
-  <h1>Avis et alertes de sécurité</h1>
+  <div class="title-row">
+    <h1>Avis et alertes de sécurité</h1>
+  </div>
+  <div class="counts">
+    <span><strong>{{ vue.alertes|length }}</strong> alerte{{ "s" if vue.alertes|length != 1 else "" }}</span>
+    <span><strong>{{ vue.avis|length }}</strong> avis</span>
+    <span><strong>{{ (vue.alertes + vue.avis)|selectattr("lie")|list|length }}</strong> lié{{ "s" if (vue.alertes + vue.avis)|selectattr("lie")|list|length != 1 else "" }} au parc</span>
+  </div>
   {% if vue.lien == "parc" %}
   <p class="muted">Bulletins CERT-FR des {{ vue.jours }} derniers jours qui citent nommément un système ou un logiciel installé sur le parc.</p>
   {% elif vue.lien == "logiciel" %}
@@ -47,7 +54,9 @@
         <td>{{ row.revised }}</td>
         <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
         <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
-        <td>{{ row.title or "—" }}{% if row.closed %} <span class="badge cloture">Clôturée</span>{% endif %}</td>
+        <td>{{ row.title or "—" }}{% if row.closed %} <span class="badge cloture">Clôturée</span>{% endif %}
+          {% if row.failles %}<ul class="flaw-inline">{% for faille in row.failles %}<li>{% if faille.url %}<a href="{{ faille.url }}" target="_blank" rel="noopener">{{ faille.id }}</a>{% else %}{{ faille.id }}{% endif %}{% if faille.severite %} <span class="badge {{ faille.severite }}">{{ gravites.get(faille.severite, faille.severite) }}</span>{% endif %}{% if faille.cvss is not none %} {{ faille.cvss }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+        </td>
         <td>{% if row.lie %}<span class="badge critique">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
         <td>{% include "securite_suivi.html" %}</td>
       </tr>
@@ -68,7 +77,9 @@
         <td>{{ row.revised }}</td>
         <td><span class="badge {{ row.type }}">{{ row.type_label }}</span></td>
         <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}</td>
-        <td>{{ row.title or "—" }}{% if row.closed %} <span class="badge cloture">Clôturée</span>{% endif %}</td>
+        <td>{{ row.title or "—" }}{% if row.closed %} <span class="badge cloture">Clôturée</span>{% endif %}
+          {% if row.failles %}<ul class="flaw-inline">{% for faille in row.failles %}<li>{% if faille.url %}<a href="{{ faille.url }}" target="_blank" rel="noopener">{{ faille.id }}</a>{% else %}{{ faille.id }}{% endif %}{% if faille.severite %} <span class="badge {{ faille.severite }}">{{ gravites.get(faille.severite, faille.severite) }}</span>{% endif %}{% if faille.cvss is not none %} {{ faille.cvss }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+        </td>
         <td>{% if row.lie %}<span class="badge important">Parc</span> {{ row.logiciels|join(", ") }}{% else %}—{% endif %}</td>
         <td>{% include "securite_suivi.html" %}</td>
       </tr>

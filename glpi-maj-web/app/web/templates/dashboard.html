@@ -23,9 +23,9 @@
 {% if data.run %}
 <section class="grid">
   <article class="card stat"><span>Postes analysés</span><strong>{{ data.analyses }}</strong></article>
-  <article class="card stat"><span>À jour</span><strong>{{ data.a_jour }}</strong></article>
-  <article class="card stat"><span>À mettre à jour</span><strong>{{ data.a_mettre_a_jour }}</strong></article>
-  <article class="card stat"><span>Critiques</span><strong>{{ data.critiques }}</strong></article>
+  <article class="card stat stat-ok"><span>À jour</span><strong>{{ data.a_jour }}</strong></article>
+  <article class="card stat stat-warn"><span>À mettre à jour</span><strong>{{ data.a_mettre_a_jour }}</strong></article>
+  <article class="card stat stat-bad"><span>Critiques</span><strong>{{ data.critiques }}</strong></article>
   <article class="card stat"><span>Actions</span><strong>{{ data.actions }}</strong></article>
 </section>
 
