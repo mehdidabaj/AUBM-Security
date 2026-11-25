@@ -8,7 +8,7 @@ import httpx
 
 from app.sources.cache import get_cache, payload_of, put_cache, source_overview, version_target
 from app.sources.limiter import RateLimiter
-from app.sources.parsers import parse_certfr, parse_cve_score, parse_feed, parse_msrc, severity_name
+from app.sources.parsers import parse_certfr, parse_cve_score, parse_feed, parse_github_releases, parse_msrc, severity_name
 from app.sources.service import _nvd_get, load_fallback_if_needed, update_sources
 from app.sources.winget import parse_manifests, winget_commands
 from app.timeutils import utcnow
@@ -517,6 +517,27 @@ def test_un_depot_github_absent_laisse_passer_les_autres(app):
         assert github.status == "success"
         assert "Incomplet" in github.message
         assert get_cache(db, "github", "powershell").last_error
+    finally:
+        db.close()
+
+
+def test_powershell_garde_la_ligne_lts_et_la_sts(app):
+    parsed = parse_github_releases(
+        [
+            {"tag_name": "v7.7.0-rc.1", "prerelease": True, "html_url": "https://github.com/rc"},
+            {"tag_name": "v7.7.0", "prerelease": False, "html_url": "https://github.com/77"},
+            {"tag_name": "v7.6.10", "prerelease": False, "html_url": "https://github.com/76"},
+            {"tag_name": "v7.6.9", "prerelease": False, "html_url": "https://github.com/769"},
+        ]
+    )
+    assert parsed["version"] == "7.7.0"
+    assert parsed["lines"] == {"7.6": "7.6.10", "7.7": "7.7.0"}
+    db = app.state.SessionLocal()
+    try:
+        load_fallback_if_needed(db)
+        put_cache(db, "github", "powershell", parsed, origin="live")
+        assert version_target(db, "powershell", "7.6.10.0")["version"] == "7.6.10"
+        assert version_target(db, "powershell", "7.5.4")["version"] == "7.7.0"
     finally:
         db.close()
 

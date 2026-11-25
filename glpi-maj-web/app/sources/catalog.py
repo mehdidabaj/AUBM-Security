@@ -16,6 +16,7 @@ MSRC_UPDATES = "https://api.msrc.microsoft.com/cvrf/v3.0/updates"
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 ENDOLIFE_URL = "https://endoflife.date/api/{product}.json"
 GITHUB_RELEASE = "https://api.github.com/repos/{repo}/releases/latest"
+GITHUB_RELEASES = "https://api.github.com/repos/{repo}/releases?per_page=40"
 
 FEEDS = {
     "chrome": "https://chromereleases.googleblog.com/feeds/posts/default",

@@ -16,7 +16,14 @@ from app.actions.rules import (
     include_low,
     threshold,
 )
-from app.actions.versions import highest_version, is_outdated, parse_version
+from app.actions.versions import (
+    adobe_file_version_hides_track,
+    highest_version,
+    is_outdated,
+    parse_version,
+    windows_patch_behind,
+)
+from app.glpi.normalize import canonical_windows_build
 from app.models.actions import ActionFollowUp, ComputedAction
 from app.models.inventory import CheckRun, ComputerRecord
 from app.sources.cache import is_end_of_life, payload_of, version_target
@@ -54,6 +61,7 @@ def compute_check(db: Session, run: CheckRun, previous: CheckRun | None = None) 
     ).all()
     created: list[ComputedAction] = []
     for computer in computers:
+        _repair_windows_build(computer)
         created.extend(_computer_actions(db, run, computer, rules, critical, important))
     db.add_all(created)
     db.flush()
@@ -85,6 +93,7 @@ def compute_computers(db: Session, run: CheckRun, glpi_ids: set[int]) -> None:
     ).all()
     created: list[ComputedAction] = []
     for computer in records:
+        _repair_windows_build(computer)
         created.extend(_computer_actions(db, run, computer, rules, critical, important))
     if created:
         db.add_all(created)
@@ -221,7 +230,7 @@ def _windows_actions(db, run, computer, rules) -> list[ComputedAction]:
             )
         )
     target = version_target(db, f"windows-{feature.lower()}")
-    if target and computer.os_build and is_outdated(computer.os_build, target["version"], "ge"):
+    if target and computer.os_build and windows_patch_behind(computer.os_build, target["version"]):
         actions.append(
             _make(
                 run,
@@ -244,8 +253,10 @@ def _version_action(db, run, computer, slug, installs, critical, important) -> C
     if not versions:
         return None
     installed = highest_version(versions)
-    target = version_target(db, slug)
+    target = version_target(db, slug, installed)
     if installed is None or target is None:
+        return None
+    if slug in {"reader", "acrobat"} and adobe_file_version_hides_track(installed, target["version"]):
         return None
     outdated = is_outdated(installed, target["version"], target.get("mode") or "ge")
     if not outdated:
@@ -380,6 +391,12 @@ def _update_summary(db, run, previous, created) -> None:
     previous_keys = {item.action_key for item in previous_actions}
     summary["nouvelles_actions"] = sorted(item.action_key for item in created if item.action_key not in previous_keys)
     run.summary_json = json.dumps(summary, ensure_ascii=False)
+
+
+def _repair_windows_build(computer) -> None:
+    repaired = canonical_windows_build(computer.os_build)
+    if repaired and repaired != computer.os_build:
+        computer.os_build = repaired
 
 
 def windows_feature(os_name: str, os_version: str, os_build: str) -> str | None:

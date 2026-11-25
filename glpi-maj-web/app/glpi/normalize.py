@@ -47,14 +47,36 @@ def linked_id(value: object) -> int | None:
 
 
 def extract_build(kernel: object) -> str:
-    """10.0.26300.9974 et 26300.9974 deviennent 26300.9974."""
+    """10.0.26300.9974 devient 26300.9974.
+
+    Le préfixe NT 10.0 n'est pas un numéro de build : 10.0.26300 donne 26300,
+    et l'ancienne lecture 0.26300 est réparée de la même façon.
+    """
     if isinstance(kernel, dict):
         kernel = kernel.get("name") or kernel.get("completename") or ""
     text = normalize_name(kernel)
     if not text:
         return ""
     token = text.split()[-1]
-    numbers = re.findall(r"\d+", token)
+    numbers = [int(part) for part in re.findall(r"\d+", token)]
+    if len(numbers) >= 3 and numbers[0] == 10 and numbers[1] == 0 and numbers[2] >= 10240:
+        if len(numbers) >= 4:
+            return f"{numbers[2]}.{numbers[3]}"
+        return str(numbers[2])
+    if len(numbers) == 2 and numbers[0] == 0 and numbers[1] >= 10240:
+        return str(numbers[1])
     if len(numbers) >= 2:
         return f"{numbers[-2]}.{numbers[-1]}"
     return token
+
+
+def canonical_windows_build(value: object) -> str:
+    """Build Windows canonique, ou la valeur d'origine si ce n'en est pas un."""
+    raw = "" if isinstance(value, dict) else normalize_name(value)
+    built = extract_build(value)
+    if not built:
+        return raw
+    head = built.split(".", 1)[0]
+    if head.isdigit() and int(head) >= 10240:
+        return built
+    return raw or built

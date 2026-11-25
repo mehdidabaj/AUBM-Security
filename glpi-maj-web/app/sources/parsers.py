@@ -4,7 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-from app.actions.versions import highest_version, parse_version
+from app.actions.versions import compare_versions, highest_version, parse_version
 
 _VERSION_TOKEN = re.compile(r"\d+(?:\.\d+){1,3}")
 _BUILD = re.compile(r"(?:10\.0\.)?(\d{4,5}\.\d+)")
@@ -19,6 +19,34 @@ def parse_github_release(payload: dict) -> dict:
         "url": payload.get("html_url") or "",
         "published": payload.get("published_at") or "",
     }
+
+
+def parse_github_releases(payload: list | dict) -> dict:
+    """Dernière version stable et le dernier correctif de chaque ligne mineure."""
+    items = payload if isinstance(payload, list) else [payload]
+    best = None
+    lines: dict[str, str] = {}
+    url = ""
+    published = ""
+    for item in items:
+        if not isinstance(item, dict) or item.get("prerelease") or item.get("draft"):
+            continue
+        parsed = parse_github_release(item)
+        version = parsed.get("version") or ""
+        parts = parse_version(version)
+        if not parts or len(parts) < 2:
+            continue
+        if best is None or (compare_versions(version, best) or 0) > 0:
+            best = version
+            url = parsed.get("url") or ""
+            published = parsed.get("published") or ""
+        key = f"{parts[0]}.{parts[1]}"
+        current = lines.get(key)
+        if current is None or (compare_versions(version, current) or 0) > 0:
+            lines[key] = version
+    if not best:
+        return {"version": "", "url": "", "published": "", "lines": {}}
+    return {"version": best, "url": url, "published": published, "lines": lines}
 
 
 def parse_endoflife(payload: list, today: datetime) -> list[dict]:
@@ -52,6 +80,7 @@ def parse_msrc(document: dict) -> dict:
     for product in products:
         names[str(product.get("ProductID"))] = str(product.get("Value") or "")
     windows: dict[str, str] = {}
+    preview_windows: dict[str, str] = {}
     m365 = None
     cves = []
     for vulnerability in document.get("Vulnerability") or []:
@@ -74,9 +103,11 @@ def parse_msrc(document: dict) -> dict:
                 if kind == "windows" and feature:
                     build = _highest_build(description)
                     if build:
-                        current = windows.get(feature)
+                        # Le correctif de sécurité (semaine B) prime sur l'aperçu facultatif.
+                        bucket = preview_windows if "preview" in description.lower() else windows
+                        current = bucket.get(feature)
                         if current is None or _prefer(build, current):
-                            windows[feature] = build
+                            bucket[feature] = build
                 if kind == "m365":
                     found = _M365.search(description)
                     if found and (m365 is None or _prefer(found.group(0), m365)):
@@ -93,7 +124,7 @@ def parse_msrc(document: dict) -> dict:
     return {
         "release_id": tracking.get("ID") or document.get("DocumentTitle") or "",
         "title": _text(document.get("DocumentTitle")),
-        "windows": windows,
+        "windows": {**preview_windows, **windows},
         "m365": m365,
         "cves": cves,
     }

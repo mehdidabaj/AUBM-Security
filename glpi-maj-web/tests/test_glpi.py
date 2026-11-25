@@ -23,6 +23,8 @@ def test_normalisation_des_noms():
 
 def test_extraction_du_build_windows():
     assert extract_build("10.0.26300.9974") == "26300.9974"
+    assert extract_build("10.0.26300") == "26300"
+    assert extract_build("0.26300") == "26300"
     assert extract_build("26300.9974") == "26300.9974"
     assert extract_build("19045.6456") == "19045.6456"
     assert extract_build({"id": 8, "name": "10.0.26300.9974"}) == "26300.9974"

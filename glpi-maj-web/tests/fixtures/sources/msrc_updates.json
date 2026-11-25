@@ -9,6 +9,11 @@
       "ID": "2026-Nov",
       "CurrentReleaseDate": "2026-11-10T00:00:00",
       "DocumentTitle": "November 2026 Security Updates"
+    },
+    {
+      "ID": "2026-Nov-Preview",
+      "CurrentReleaseDate": "2026-11-19T00:00:00",
+      "DocumentTitle": "November 2026 Preview Updates"
     }
   ]
 }

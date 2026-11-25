@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.actions.mapping import resolve_slug
 from app.actions.versions import compare_versions, highest_version
-from app.glpi.normalize import normalize_name
+from app.glpi.normalize import canonical_windows_build, normalize_name
 from app.models.actions import ComputedAction
 from app.models.history import SoftwareChange
 from app.models.inventory import CheckRun, ComputerRecord
@@ -155,7 +155,8 @@ def _snapshots(db: Session, run_id: int) -> dict[int, dict]:
         for key, values in versions.items():
             best = highest_version(values) or values[0]
             snapshot[key] = (names[key], best)
-        system = " ".join(part for part in (record.os_name, record.os_version, record.os_build) if part).strip()
+        build = canonical_windows_build(record.os_build)
+        system = " ".join(part for part in (record.os_name, record.os_version, build) if part).strip()
         if system:
             snapshot["systeme"] = (record.os_name or "Système", system)
         found[record.glpi_id] = snapshot

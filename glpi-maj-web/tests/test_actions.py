@@ -7,10 +7,18 @@ from sqlalchemy import select
 
 from app.actions.engine import compute_check, follow_up_for, is_up_to_date, priority_of, set_follow_up
 from app.actions.mapping import set_mapping, suggest_slug, unmatched_names
-from app.actions.versions import compare_versions, is_outdated, parse_version
+from app.actions.versions import (
+    adobe_file_version_hides_track,
+    compare_versions,
+    is_outdated,
+    parse_version,
+    powershell_channel_target,
+    windows_patch_behind,
+)
 from app.glpi.service import latest_successful, save_check
 from app.glpi.types import AgentItem, ComputerItem, SoftwareItem
 from app.models.actions import ComputedAction
+from app.models.inventory import ComputerRecord
 from app.sources.cache import put_cache
 from app.sources.service import load_fallback_if_needed
 from app.timeutils import utcnow
@@ -27,6 +35,17 @@ def test_comparaison_de_versions():
     assert is_outdated("8u511", "8u511", "gt") is True
     assert is_outdated("8u512", "8u511", "gt") is False
     assert is_outdated("157.0.8103.50", "157.0.8103.50", "ge") is False
+    assert windows_patch_behind("0.26300", "26300.9974") is False
+    assert windows_patch_behind("10.0.26300", "26300.9974") is False
+    assert windows_patch_behind("26300.9974", "26300.9974") is False
+    assert windows_patch_behind("26300.10075", "26300.9974") is False
+    assert windows_patch_behind("26300.9818", "26300.9974") is True
+    assert adobe_file_version_hides_track("26.0.0.1", "26.003.22110") is True
+    assert adobe_file_version_hides_track("26.001.21651", "26.003.22110") is False
+    assert adobe_file_version_hides_track("25.0.0.1", "26.003.22110") is False
+    assert powershell_channel_target({"7.6": "7.6.10", "7.7": "7.7.0"}, "7.6.10.0", "7.6.10", "7.7.0") == "7.6.10"
+    assert powershell_channel_target({"7.6": "7.6.10", "7.7": "7.7.0"}, "7.6.8", "7.6.10", "7.7.0") == "7.6.10"
+    assert powershell_channel_target({"7.6": "7.6.10", "7.7": "7.7.0"}, "7.5.4", "7.6.10", "7.7.0") == "7.7.0"
 
 
 def _machine(**overrides) -> ComputerItem:
@@ -284,6 +303,78 @@ def test_mise_a_jour_automatique_retire_l_action(app):
         save_check(db, [_machine(software=[SoftwareItem("Google Chrome", "Google", "157.0.8103.50")])], "demo")
         run = latest_successful(db)
         assert not any(row.product_slug == "chrome" and row.kind == "version" for row in actions_by_computer(db, run).get(1, []))
+    finally:
+        db.close()
+
+
+def test_versions_deja_courantes_ne_font_pas_action(app):
+    db = app.state.SessionLocal()
+    try:
+        load_fallback_if_needed(db)
+        put_cache(
+            db,
+            "github",
+            "powershell",
+            {
+                "version": "7.7.0",
+                "lines": {"7.6": "7.6.10", "7.7": "7.7.0"},
+                "url": "https://github.com/PowerShell/PowerShell/releases/tag/v7.7.0",
+            },
+            origin="live",
+        )
+        put_cache(
+            db,
+            "winget",
+            "reader",
+            {"version": "26.003.22110", "url": "https://helpx.adobe.com/acrobat/release-note/release-notes-acrobat-reader.html"},
+            origin="live",
+        )
+        save_check(
+            db,
+            [
+                _machine(
+                    glpi_id=1,
+                    name="PC-DEJA-A-JOUR",
+                    os_build="0.26300",
+                    software=[
+                        SoftwareItem("Adobe Acrobat Reader", "Adobe", "26.0.0.1"),
+                        SoftwareItem("PowerShell 7", "Microsoft", "7.6.10.0"),
+                    ],
+                ),
+                _machine(
+                    glpi_id=2,
+                    name="PC-VRAIMENT-RETARD",
+                    os_build="26300.9818",
+                    software=[
+                        SoftwareItem("Adobe Acrobat Reader", "Adobe", "26.001.21651"),
+                        SoftwareItem("PowerShell 7", "Microsoft", "7.6.8"),
+                    ],
+                ),
+                _machine(
+                    glpi_id=3,
+                    name="PC-PS-ABANDONNE",
+                    os_build="26300.9974",
+                    software=[SoftwareItem("PowerShell 7", "Microsoft", "7.5.4")],
+                ),
+            ],
+            "demo",
+        )
+        current = _kinds(db, 1)
+        assert "windows_update:windows-26h2" not in current
+        assert "version:reader" not in current
+        assert "version:powershell" not in current
+        run = latest_successful(db)
+        stored = db.scalar(
+            select(ComputerRecord).where(ComputerRecord.check_run_id == run.id, ComputerRecord.glpi_id == 1)
+        )
+        assert stored.os_build == "26300"
+        late = _kinds(db, 2)
+        assert late["windows_update:windows-26h2"].installed_version == "26300.9818"
+        assert late["windows_update:windows-26h2"].target_version == "26300.9974"
+        assert late["version:reader"].installed_version == "26.001.21651"
+        assert late["version:reader"].target_version == "26.003.22110"
+        assert late["version:powershell"].target_version == "7.6.10"
+        assert _kinds(db, 3)["version:powershell"].target_version == "7.7.0"
     finally:
         db.close()
 

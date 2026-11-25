@@ -23,6 +23,7 @@ from app.sources.catalog import (
     ENDOLIFE_URL,
     FEEDS,
     GITHUB_RELEASE,
+    GITHUB_RELEASES,
     KEV_URL,
     MSRC_UPDATES,
     NVD_URL,
@@ -41,6 +42,7 @@ from app.sources.parsers import (
     parse_endoflife,
     parse_feed,
     parse_github_release,
+    parse_github_releases,
     parse_kev,
     parse_msrc,
     parse_nvd,
@@ -339,9 +341,14 @@ def _collect_github(db, settings, client, products, sleep, now) -> int:
         if cached and cached.etag:
             headers["If-None-Match"] = cached.etag
         try:
+            release_url = (
+                GITHUB_RELEASES.format(repo=product.github)
+                if product.slug == "powershell"
+                else GITHUB_RELEASE.format(repo=product.github)
+            )
             response = get_with_retries(
                 client,
-                GITHUB_RELEASE.format(repo=product.github),
+                release_url,
                 headers=headers,
                 sleep=sleep,
             )
@@ -351,7 +358,10 @@ def _collect_github(db, settings, client, products, sleep, now) -> int:
                 continue
             if response.status_code >= 400:
                 raise RuntimeError(f"GitHub a répondu HTTP {response.status_code} pour {product.github}.")
-            parsed = parse_github_release(response.json())
+            body = response.json()
+            parsed = parse_github_releases(body) if product.slug == "powershell" else parse_github_release(body)
+            if not parsed.get("version"):
+                raise RuntimeError(f"GitHub n'a publié aucune version stable pour {product.github}.")
         except Exception as exc:
             mark_error(db, "github", product.slug, str(exc))
             failures.append(f"{product.label} : {exc}")
@@ -421,6 +431,19 @@ def _slug_for_cycle(family: str, cycle: str, wanted: set[str]) -> str | None:
     return None
 
 
+def _security_release(updates: list) -> dict:
+    """Le bulletin de sécurité mensuel, pas l'aperçu facultatif publié ensuite."""
+
+    def preview(item: dict) -> bool:
+        blob = " ".join(str(item.get(key) or "") for key in ("ID", "Alias", "DocumentTitle", "Title")).lower()
+        return "preview" in blob
+
+    dated = [item for item in updates if isinstance(item, dict)]
+    security = [item for item in dated if not preview(item)]
+    pool = security or dated
+    return max(pool, key=lambda item: item.get("CurrentReleaseDate") or "")
+
+
 def _collect_msrc(db, client, products, sleep, now) -> int:
     if not any(product.triggers_msrc for product in products):
         return 0
@@ -439,7 +462,7 @@ def _collect_msrc(db, client, products, sleep, now) -> int:
     updates = body.get("value") if isinstance(body, dict) else body
     if not updates:
         raise RuntimeError("MSRC n'a renvoyé aucune mise à jour.")
-    latest = max(updates, key=lambda item: item.get("CurrentReleaseDate") or "")
+    latest = _security_release(updates)
     identifier = latest.get("ID") or latest.get("Alias")
     document = get_with_retries(
         client,
