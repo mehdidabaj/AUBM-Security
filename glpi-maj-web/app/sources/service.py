@@ -635,13 +635,17 @@ def _collect_certfr(db, client, products, sleep, now) -> int:
             continue
         parsed["revised"] = str(item.get("last_revision_date") or "")
         owned = [slug for slug in _certfr_slugs(parsed, products) if chosen.get(slug) == reference]
-        cve = _newest_cve(parsed["cves"])
-        if not owned or cve is None:
+        listed = [item for item in parsed["cves"] if item.get("id")]
+        if not owned or not listed:
             continue
-        score = _cve_score(client, cve["id"], sleep)
-        parsed["cvss"] = score.get("cvss")
-        parsed["severite"] = severity_name(parsed["cvss"], alert=parsed["alert"], cvss_label=score.get("cvss_label") or "")
-        _remember_certfr(cves, parsed, cve["id"], owned)
+        for cve in listed:
+            score = _cve_score(client, cve["id"], sleep)
+            noted = dict(parsed)
+            noted["cvss"] = score.get("cvss")
+            noted["severite"] = severity_name(
+                noted["cvss"], alert=parsed["alert"], cvss_label=score.get("cvss_label") or ""
+            )
+            _remember_certfr(cves, noted, cve["id"], owned)
     put_cache(db, "certfr", "catalog", {"cves": cves}, origin="live", now=now)
     return len(bulletins)
 

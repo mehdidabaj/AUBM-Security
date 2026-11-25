@@ -29,6 +29,7 @@ SEVERITY_LABELS = {
     "critique": "Critique",
     "important": "Important",
     "faible": "Faible",
+    "moyenne": "Moyenne",
     "a_jour": "À jour",
     "autre": "Autre",
     "lecture": "Lecture",
@@ -310,6 +311,7 @@ def security_bulletins(db: Session, *, mode: str = "") -> dict:
         raw = payload_of(get_cache(db, "certfr", "catalog")).get("bulletins") or []
     installed = _installed_slugs(db)
     followed = watched_keys(db)
+    flaws_by_ref = _flaws_by_reference(db)
     alertes: list[dict] = []
     avis: list[dict] = []
     lus = 0
@@ -333,6 +335,7 @@ def security_bulletins(db: Session, *, mode: str = "") -> dict:
             "closed": False,
             "alert": bool(row.get("alert")),
             "sujet": "",
+            "failles": flaws_by_ref.get(str(row.get("reference") or ""), []),
         }
         if mode == "parc" and not item["lie"]:
             continue
@@ -413,6 +416,33 @@ def _watch_row(watch: SecurityWatch, installed: set[str]) -> dict:
         "logiciels": logiciels,
         "suivi": True,
     }
+
+
+def _flaws_by_reference(db: Session) -> dict[str, list[dict]]:
+    """Toutes les failles CVE rattachées à chaque bulletin du dernier avis utile."""
+    catalog = payload_of(get_cache(db, "certfr", "catalog")).get("cves") or {}
+    if not isinstance(catalog, dict):
+        return {}
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for cve_id, row in catalog.items():
+        if not isinstance(row, dict):
+            continue
+        reference = str(row.get("reference") or "")
+        if not reference:
+            continue
+        cvss = row.get("cvss")
+        grouped[reference].append(
+            {
+                "id": str(cve_id),
+                "cvss": cvss if isinstance(cvss, (int, float)) else None,
+                "severite": row.get("severite") or "",
+                "url": row.get("url") or "",
+            }
+        )
+    rank = {"critique": 0, "important": 1, "moyenne": 2, "faible": 3}
+    for items in grouped.values():
+        items.sort(key=lambda item: (rank.get(item["severite"], 9), -(item["cvss"] or 0), item["id"]))
+    return grouped
 
 
 def bulletin_title(db: Session, reference: str) -> str:

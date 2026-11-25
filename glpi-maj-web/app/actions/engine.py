@@ -357,6 +357,8 @@ def _cves_for(db: Session, slug: str) -> list[dict]:
                 "severite": row.get("severite") or severity_name(cvss, alert=alert),
             }
         )
+    rank = {"critique": 0, "important": 1, "moyenne": 2, "faible": 3}
+    found.sort(key=lambda item: (rank.get(item.get("severite") or "", 9), -(item.get("cvss") or 0), item.get("id") or ""))
     return found
 
 

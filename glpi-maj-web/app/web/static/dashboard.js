@@ -12,7 +12,24 @@
         labels: data.logiciels.labels,
         datasets: [{ label: "Actions", data: data.logiciels.values, backgroundColor: "#0f6e6b" }]
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            ticks: {
+              maxRotation: 40,
+              minRotation: 0,
+              callback: function (value) {
+                var label = this.getLabelForValue(value);
+                return label.length > 24 ? label.slice(0, 22) + "…" : label;
+              }
+            }
+          },
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
     });
   }
   var evolution = document.getElementById("chart-evolution");
