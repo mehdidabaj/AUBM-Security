@@ -9,7 +9,7 @@ Group=glpimaj
 WorkingDirectory=/opt/glpi-maj-web
 Environment=APP_PORT=8001
 Environment=PYTHONDONTWRITEBYTECODE=1
-Environment=TZ=Europe/Paris
+Environment=TZ=UTC
 EnvironmentFile=/etc/glpi-maj-web/config.env
 ExecStart=/opt/glpi-maj-web/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${APP_PORT}
 Restart=on-failure

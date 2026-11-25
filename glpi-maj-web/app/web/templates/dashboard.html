@@ -6,7 +6,7 @@
   {% if not data.run %}
   <p>Aucune vérification n'a encore été enregistrée.</p>
   {% else %}
-  <p class="muted">Dernière vérification le {{ data.run.finished_at|paris }} (heure de Paris), origine {{ data.run.origin }}.</p>
+  <p class="muted">Dernière vérification le {{ data.run.finished_at|gmt }} (heure GMT), origine {{ data.run.origin }}.</p>
   {% if data.a_mettre_a_jour == 0 %}
   <p class="ok">Tout est à jour : aucune action critique ou importante.</p>
   {% else %}

@@ -41,7 +41,7 @@
       {% for ligne in journal %}
       <tr>
         <td>{{ ligne.source }}</td>
-        <td>{{ ligne.started_at|paris }}</td>
+        <td>{{ ligne.started_at|gmt }}</td>
         <td>{{ ligne.status }}</td>
         <td>{{ ligne.items_count }}</td>
         <td>{{ ligne.error or ligne.message }}</td>

@@ -32,5 +32,7 @@ rsync -a --delete \
 chown -R glpimaj:glpimaj /opt/glpi-maj-web
 sudo -u glpimaj env GLPI_MAJ_CONFIG=/etc/glpi-maj-web/config.env \
     bash -c 'cd /opt/glpi-maj-web && .venv/bin/python -m app.cli upgrade'
+install -m 0644 /opt/glpi-maj-web/deploy/glpi-maj-web.service /etc/systemd/system/glpi-maj-web.service
+systemctl daemon-reload
 systemctl restart glpi-maj-web
 echo "Mise à jour terminée."

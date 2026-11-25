@@ -5,11 +5,22 @@ import re
 from tests.conftest import csrf_from, login
 
 
+def test_l_heure_affichee_reste_en_gmt():
+    from datetime import datetime
+
+    from app.timeutils import format_gmt
+
+    assert format_gmt(datetime(2026, 11, 25, 10, 59)) == "25/11/2026 10:59"
+    assert format_gmt(None) == "—"
+
+
 def test_tableau_de_bord_et_scripts_locaux(client, admin):
     login(client, "admin", "motdepasse-admin")
     page = client.get("/")
     assert page.status_code == 200
     assert "Bonjour" in page.text
+    assert "heure GMT" in page.text
+    assert "heure de Paris" not in page.text
     assert "Postes analysés" in page.text
     assert ">20<" in page.text
     assert "/static/vendor/chart.umd.min.js" in page.text

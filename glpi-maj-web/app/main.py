@@ -3,9 +3,7 @@ from __future__ import annotations
 import html
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -14,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import OperationalError
 
 from app.config import Settings, load_settings
+from app.timeutils import format_gmt
 from app.database import ensure_database_parent, make_engine, make_session_factory
 from app.web.pages import router as pages_router
 from app.web.routes import router
@@ -59,13 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.SessionLocal = make_session_factory(engine)
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-    def paris(value: datetime | None) -> str:
-        if value is None:
-            return "—"
-        aware = value.replace(tzinfo=timezone.utc)
-        return aware.astimezone(ZoneInfo("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
-
-    templates.env.filters["paris"] = paris
+    templates.env.filters["gmt"] = format_gmt
     app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(router)
