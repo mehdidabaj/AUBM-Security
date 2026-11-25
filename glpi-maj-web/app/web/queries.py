@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.actions.engine import follow_up_for, is_up_to_date, priority_of
+from app.actions.engine import done_action_keys, follow_up_for, is_up_to_date, priority_of
 from app.actions.mapping import resolve_slug
 from app.actions.rules import include_low
 from app.actions.versions import is_outdated, parse_version
@@ -35,8 +35,12 @@ STATUS_LABELS = {"a_faire": "À faire", "en_cours": "En cours", "fait": "Fait"}
 
 
 def actions_by_computer(db: Session, run: CheckRun) -> dict[int, list[ComputedAction]]:
+    """Actions encore à faire. Une action faite, ou devenue inutile après mise à jour, n'y figure pas."""
+    done = done_action_keys(db)
     grouped: dict[int, list[ComputedAction]] = defaultdict(list)
     for action in db.scalars(select(ComputedAction).where(ComputedAction.check_run_id == run.id)):
+        if action.action_key in done:
+            continue
         grouped[action.glpi_computer_id].append(action)
     return grouped
 

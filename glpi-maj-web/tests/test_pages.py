@@ -31,6 +31,33 @@ def test_tableau_de_bord_et_scripts_locaux(client, admin):
     assert client.get("/static/vendor/chart.umd.min.js").status_code == 200
 
 
+def test_action_faite_quitte_la_liste(client, admin):
+    login(client, "admin", "motdepasse-admin")
+    page = client.get("/postes/4")
+    titre = "Migrer vers Windows 11 26H2"
+    assert titre in page.text
+    bloc = page.text.split(titre, 1)[1]
+    key = re.search(r'name="action_key" value="([^"]+)"', bloc)
+    assert key
+    saved = client.post(
+        "/postes/4/suivi",
+        data={
+            "csrf_token": csrf_from(page.text),
+            "action_key": key.group(1),
+            "status": "fait",
+            "technician": "Camille",
+            "comment": "Migration faite",
+        },
+        follow_redirects=False,
+    )
+    assert saved.status_code == 303
+    again = client.get("/postes/4")
+    assert titre not in again.text
+    assert "Migrer vers Microsoft 365 Apps" in again.text
+    assert "Suivi : Fait" in again.text
+    assert "Migration faite" in again.text
+
+
 def test_filtre_et_tri_des_postes(client, admin):
     login(client, "admin", "motdepasse-admin")
     page = client.get("/postes", params={"service": "Comptabilité"})

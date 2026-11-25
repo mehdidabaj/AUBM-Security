@@ -264,6 +264,22 @@ def test_noms_inconnus_et_correspondance_manuelle(app):
         db.close()
 
 
+def test_mise_a_jour_automatique_retire_l_action(app):
+    from app.web.queries import actions_by_computer
+
+    db = app.state.SessionLocal()
+    try:
+        load_fallback_if_needed(db)
+        save_check(db, [_machine(software=[SoftwareItem("Google Chrome", "Google", "120.0")])], "demo")
+        run = latest_successful(db)
+        assert any(row.product_slug == "chrome" and row.kind == "version" for row in actions_by_computer(db, run).get(1, []))
+        save_check(db, [_machine(software=[SoftwareItem("Google Chrome", "Google", "157.0.8103.50")])], "demo")
+        run = latest_successful(db)
+        assert not any(row.product_slug == "chrome" and row.kind == "version" for row in actions_by_computer(db, run).get(1, []))
+    finally:
+        db.close()
+
+
 def test_parc_demo_couvre_les_cas_demandes(app):
     from app.demo.loader import seed_demo_if_needed
 

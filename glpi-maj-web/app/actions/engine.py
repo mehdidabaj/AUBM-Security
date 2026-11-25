@@ -135,6 +135,11 @@ def follow_up_for(db: Session, action_key: str) -> ActionFollowUp | None:
     return db.scalar(select(ActionFollowUp).where(ActionFollowUp.action_key == action_key))
 
 
+def done_action_keys(db: Session) -> set[str]:
+    """Actions déjà faites, à la main. Elles ne restent pas dans la liste à traiter."""
+    return set(db.scalars(select(ActionFollowUp.action_key).where(ActionFollowUp.status == "fait")))
+
+
 def priority_of(actions: list[ComputedAction]) -> str:
     rank = 0
     label = "a_jour"
